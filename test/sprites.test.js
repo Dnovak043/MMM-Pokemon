@@ -142,3 +142,23 @@ test("hit frames become hit times, and the placeholder set is a silent 32px body
   assert.equal(blank.format, "placeholder"); assert.equal(blank.base, 32); assert.deepEqual(blank.roles.attack, []);
   for (const name of Object.keys(blank.anims)) assert.deepEqual(Sprites.cell(blank, name, "E", 0.3), { anim: name, index: name === "idle" || name === "sleep" ? 0 : 1, sheet: 0, x: 0, y: 0, w: 32, h: 32 });
 });
+
+test("the body is what is visibly drawn in the walk frames, not the padded frame", () => {
+  // A 2 × 2 sheet of 8 × 10 frames; pixels drawn at different spots in each, all in the upper part.
+  const fw = 8, fh = 10, width = 16, height = 20, data = new Uint8ClampedArray(width * height * 4);
+  const dot = (frameX, frameY, x, y, alpha = 255) => { data[((frameY * fh + y) * width + frameX * fw + x) * 4 + 3] = alpha; };
+  dot(0, 0, 2, 1); dot(1, 0, 6, 3); dot(0, 1, 3, 5); dot(1, 1, 4, 2); dot(1, 1, 0, 9, 10); // The last is too faint to count.
+  assert.deepEqual(Sprites.bounds(data, width, height, fw, fh), { w: 5, h: 5, dx: 0.5, dy: -1.5 });
+  assert.equal(Sprites.bounds(new Uint8ClampedArray(width * height * 4), width, height, fw, fh), null);
+  assert.deepEqual(Sprites.bounds(data, width + 3, height, fw, fh) === null, false); // Ragged edges are ignored, not misread.
+  const xml = anim("Walk", 88, 112, [4, 4]) + anim("Idle", 88, 112, [4]) + anim("Sleep", 64, 48, [30]);
+  const list = Sprites.parseAnimData(xml), images = {};
+  for (const e of list) images[e.file] = { url: e.file, width: e.w * e.ticks.length, height: e.h * 8 };
+  const padded = Sprites.pmd(list, images), tight = Sprites.pmd(list, images, [], { w: 82, h: 61, dx: 0, dy: -23.5 });
+  assert.equal(padded.base, 112); assert.deepEqual(padded.offset, { x: 0, y: 0 });
+  assert.equal(tight.base, 82); assert.deepEqual(tight.offset, { x: 0, y: -23.5 });
+  assert.equal(Sprites.pmd(list, images, [], { w: 4, h: 6, dx: 0, dy: 0 }).base, 16); assert.equal(Sprites.pmd(list, images, [], { w: 300, h: 6, dx: 0, dy: 0 }).base, 128);
+  const big = new Mon({ scale: 2 }), small = new Mon({ scale: 2 });
+  big.resize(1000, 800); small.resize(1000, 800); big.setSprites(padded); small.setSprites(tight);
+  assert.deepEqual([big.size, small.size], [224, 164]);
+});

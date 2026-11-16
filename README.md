@@ -154,7 +154,7 @@ Pokémon learns them, so they only appear if you list them under `moves`.
 | `party` | four starters | 1–12 entries, see above |
 | `level` | `50` | 1–100, for members without their own |
 | `battles` | `true` | Whether sprites battle when they meet |
-| `battleRange` | `24` | 0–300 pixels between two sprite boxes at which a battle starts |
+| `battleRange` | `24` | 0–300 pixels between two sprites at which a battle starts, measured between what is visibly drawn of each (not its padded frame), so large Pokémon must come as close as small ones |
 | `battleCooldown` | `30` | 0–3600 seconds a sprite is left alone after a battle |
 | `faintTime` | `8` | 1–600 seconds the loser stays down |
 | `battleSpeed` | `1` | 0.25–4; 2 plays battles twice as fast |

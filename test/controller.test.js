@@ -135,6 +135,37 @@ test("nameplates, HP bars and text boxes are the same size whatever the sprites'
   k.destroy();
 });
 
+test("large sprites take up only the space they are drawn in: body, battle distance and nameplate", async () => {
+  // 88 × 112 walk frames whose artwork fills just the top 82 × 61, as Sprite Collab sheets for big Pokémon do.
+  const bigXml = `<AnimData><Anims>${anim("Walk", 88, 112, [4, 4])}${anim("Idle", 88, 112, [20, 4])}${anim("Sleep", 64, 48, [30, 30])}${anim("Attack", 96, 120, [2, 2, 4, 2], "<HitFrame>2</HitFrame>")}</Anims></AnimData>`;
+  const withCanvas = (e) => {
+    const plain = e.doc.createElement;
+    e.doc.createElement = (tag) => (tag !== "canvas" ? plain(tag) : { getContext: () => ({
+      drawImage(image) { this.image = image; },
+      getImageData(x, y, w, h) { const data = new Uint8ClampedArray(w * h * 4); for (let py = 2; py < 63; py++) for (let px = 3; px < 85; px++) data[(py * w + px) * 4 + 3] = 255; return { data }; }
+    }) });
+  };
+  const e = environment({ sprites: { "0095": bigXml, "0130": bigXml } }); withCanvas(e);
+  const c = new Controller({ ...quiet, party: ["onix", "gyarados"], battleCooldown: 0 }, e.env);
+  await e.settle();
+  const [a, b] = c.cats;
+  assert.equal(a.sprites.base, 82); assert.deepEqual(a.sprites.offset, { x: 0, y: -23.5 }); assert.equal(a.size, 164); // Not 224.
+  // The 176 × 224 frame is placed so its drawn part sits exactly on the 164px body box.
+  const frameX = /translate\((-?\d+)px, (-?\d+)px\)/.exec(c.pets[0].sprite.style.transform).slice(1).map(Number);
+  assert.deepEqual(frameX, [Math.round(a.x + (164 - 176) / 2), Math.round(a.y + (164 - 224) / 2 + 47)]);
+  assert.ok(Math.abs(frameX[1] + 4 - (a.y + (164 - 122) / 2)) <= 1, "artwork is vertically centred on the body");
+  // A battle needs the bodies within battleRange of each other: 164 + 24 between centres, not 224 + 24.
+  c.cats.forEach((cat) => { cat.cooldown = 0; cat.y = 300; }); a.x = 100; b.x = 100 + 164 + 30;
+  e.tick(16); e.tick(16); assert.equal(c.arena.battles.length, 0);
+  b.x = 100 + 164 + 20; e.tick(16); e.tick(16); assert.equal(c.arena.battles.length, 1);
+  const hudY = Number(/translate\(-?\d+px, (-?\d+)px\)/.exec(c.pets[0].hud.style.transform)[1]);
+  assert.ok(hudY < a.y && hudY > a.y - 164 * 0.25 - 40, "nameplate sits just above the drawn sprite");
+  c.destroy();
+  // Without a canvas the frame size is used, as before.
+  const e2 = environment({ sprites: { "0095": bigXml } }), c2 = new Controller({ ...quiet, party: ["onix"] }, e2.env);
+  await e2.settle(); assert.equal(c2.cats[0].size, 224); c2.destroy();
+});
+
 test("commands, visibility, reduced motion and avoided modules", async () => {
   const e = environment({ sprites });
   const panel = { getBoundingClientRect: () => ({ left: 100, top: 100, right: 300, bottom: 200, width: 200, height: 100 }), contains: () => false, nodeType: 1, css: {} };
