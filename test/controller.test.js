@@ -5,7 +5,7 @@ const os = require("node:os");
 const vm = require("node:vm");
 const Engine = require("../lib/pk-engine.js");
 const Controller = require("../lib/pk-controller.js");
-const { fs, path, fighterXml, plainXml, sizes, environment } = require("./helpers.js");
+const { fs, path, anim, fighterXml, plainXml, sizes, environment } = require("./helpers.js");
 
 const sprites = { "0025": fighterXml, "0007": fighterXml, "0004": fighterXml, "0001": fighterXml, "0132": plainXml, "0025-0000-0001": fighterXml };
 const quiet = { idleMin: 300, idleMax: 300, sleepAfter: 3600, reducedMotion: "never" };
@@ -101,6 +101,29 @@ test("a battle is drawn with names, HP bars, status tags, text, particles and sp
   await plain.settle(); p.cats.forEach((cat) => { cat.cooldown = 0; }); p.cats[1].x = p.cats[0].x + 80; p.cats[1].y = p.cats[0].y;
   for (let i = 0; i < 60; i++) plain.tick(16);
   assert.equal(p.arena.battles.length, 1); assert.equal(p.labels.length, 0); assert.ok(p.pets.every((pet) => pet.hud.style.display === "none")); p.destroy();
+});
+
+test("nameplates, HP bars and text boxes are the same size whatever the sprites' sizes", async () => {
+  const bigXml = anim("Walk", 48, 72, [4, 4, 4, 4]) + anim("Idle", 56, 72, [20, 4]) + anim("Sleep", 48, 40, [30, 30]);
+  const e = environment({ sprites: { "0025": fighterXml, "0007": fighterXml, "0143": `<AnimData><Anims>${bigXml}</Anims></AnimData>`, "0094": `<AnimData><Anims>${bigXml}</Anims></AnimData>` } });
+  const c = new Controller({ ...quiet, party: ["pikachu", "squirtle", "snorlax", "gengar"], battleCooldown: 0 }, e.env);
+  await e.settle();
+  assert.deepEqual(c.cats.map((cat) => cat.size), [64, 64, 144, 144]);
+  c.cats.forEach((cat, i) => { cat.cooldown = 0; cat.x = i < 2 ? 100 + i * 80 : 500 + (i - 2) * 160; cat.y = i < 2 ? 100 : 300; });
+  e.tick(16); e.tick(16);
+  assert.equal(c.arena.battles.length, 2);
+  const huds = c.pets.map((p) => [p.hud.style.display, p.hud.style.width, p.hud.style.fontSize]);
+  assert.deepEqual(huds, Array.from({ length: 4 }, () => ["block", "64px", "11px"]));
+  const boxes = c.labels.map((l) => [l.element.style.display, l.element.style.width, l.element.style.fontSize]);
+  assert.deepEqual(boxes, [["block", "320px", "13px"], ["block", "320px", "13px"]]);
+  // Still centred on each sprite, large or small.
+  c.pets.forEach((p) => assert.equal(/translate\((-?\d+)px/.exec(p.hud.style.transform)[1], String(Math.round(p.cat.x + (p.cat.size - 64) / 2))));
+  c.destroy();
+  const scaled = environment({ sprites: { "0025": fighterXml, "0007": fighterXml } }), s3 = new Controller({ ...quiet, scale: 3, party: ["pikachu", "squirtle"] }, scaled.env);
+  await scaled.settle(); s3.cats.forEach((cat) => { cat.cooldown = 0; }); s3.cats[1].x = s3.cats[0].x + 110; s3.cats[1].y = s3.cats[0].y;
+  scaled.tick(16); scaled.tick(16);
+  assert.deepEqual([s3.pets[0].hud.style.width, s3.pets[0].hud.style.fontSize, s3.labels[0].element.style.width, s3.labels[0].element.style.fontSize], ["96px", "16px", "480px", "19px"]);
+  s3.destroy();
 });
 
 test("commands, visibility, reduced motion and avoided modules", async () => {
