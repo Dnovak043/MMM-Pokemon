@@ -1,0 +1,30 @@
+{
+  "name": "mmm-pokemon",
+  "version": "1.0.0",
+  "description": "Wandering Pokémon sprites that battle with their real moves, for MagicMirror²",
+  "author": "Derived from MMM-Neko by Brian Wente",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "lint": "eslint .",
+    "check": "node --run lint && node --run test",
+    "fetch:sprites": "node scripts/fetch-sprites.js",
+    "build:data": "node scripts/build-data.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "magicmirror",
+    "magicmirror-module",
+    "pokemon",
+    "pixel-art",
+    "desktop-pet"
+  ],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0"
+  }
+}

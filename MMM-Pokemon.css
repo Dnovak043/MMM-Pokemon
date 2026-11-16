@@ -1,0 +1,85 @@
+/* Scope includes MagicMirror's wrapper, which otherwise enables pointer events. */
+.module.MMM-Pokemon,
+.module.MMM-Pokemon .module-content,
+.module.MMM-Pokemon .mmm-pokemon-overlay,
+.module.MMM-Pokemon .mmm-pokemon-overlay * {
+  pointer-events: none !important;
+}
+
+.module.MMM-Pokemon {
+  margin: 0;
+  /* Keep viewport coordinates stable during MagicMirror show/hide effects. */
+  transform: none !important;
+}
+
+.mmm-pokemon-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+  user-select: none;
+}
+
+.mmm-pokemon-overlay > div {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.mmm-pokemon-sprite {
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.mmm-pokemon-shield {
+  box-sizing: border-box;
+  border: 2px solid rgb(160 240 192 / 85%);
+  border-radius: 50%;
+  background: rgb(160 240 192 / 15%);
+  z-index: 100000;
+}
+
+.mmm-pokemon-hud {
+  z-index: 100001;
+  font-family: monospace;
+  font-weight: bold;
+  line-height: 1.1;
+  color: #fff;
+  text-shadow: 0 0 2px #000, 0 1px 0 #000;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.mmm-pokemon-hp {
+  box-sizing: border-box;
+  height: 0.5em;
+  margin-top: 1px;
+  border: 1px solid #fff;
+  background: #222;
+}
+
+.mmm-pokemon-hp-fill {
+  height: 100%;
+  background: #3c3;
+  transition: width 0.3s linear;
+}
+
+.mmm-pokemon-text {
+  box-sizing: border-box;
+  z-index: 100002;
+  padding: 0.3em 0.6em;
+  border: 2px solid #fff;
+  border-radius: 0.4em;
+  background: rgb(16 24 40 / 88%);
+  font-family: monospace;
+  line-height: 1.25;
+  color: #fff;
+  text-align: left;
+}
+
+.mmm-pokemon-dot {
+  z-index: 100003;
+  font-family: monospace;
+  font-weight: bold;
+  line-height: 1;
+}
