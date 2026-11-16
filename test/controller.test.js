@@ -166,6 +166,16 @@ test("large sprites take up only the space they are drawn in: body, battle dista
   await e2.settle(); assert.equal(c2.cats[0].size, 224); c2.destroy();
 });
 
+test("a party can be any size", async () => {
+  const e = environment({ sprites: { "0025": fighterXml } });
+  const c = new Controller({ ...quiet, party: new Array(40).fill("pikachu"), battles: false }, e.env);
+  await e.settle();
+  assert.equal(c.pets.length, 40); assert.ok(c.cats.every((cat) => cat.sprites.format === "pmd"));
+  assert.equal(new Set(c.cats.map((cat) => Math.round(cat.x))).size, 40); // Spread across the width.
+  for (let i = 0; i < 20; i++) e.tick(16);
+  c.destroy();
+});
+
 test("commands, visibility, reduced motion and avoided modules", async () => {
   const e = environment({ sprites });
   const panel = { getBoundingClientRect: () => ({ left: 100, top: 100, right: 300, bottom: 200, width: 200, height: 100 }), contains: () => false, nodeType: 1, css: {} };

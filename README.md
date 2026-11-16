@@ -151,7 +151,7 @@ Pokémon learns them, so they only appear if you list them under `moves`.
 
 | Option | Default | Notes |
 | --- | --- | --- |
-| `party` | four starters | 1–12 entries, see above |
+| `party` | four starters | One or more entries, see above. There is no upper limit; very large parties cost more CPU and crowd the screen |
 | `level` | `50` | 1–100, for members without their own |
 | `battles` | `true` | Whether sprites battle when they meet |
 | `battleRange` | `24` | 0–300 pixels between two sprites at which a battle starts, measured between what is visibly drawn of each (not its padded frame), so large Pokémon must come as close as small ones |

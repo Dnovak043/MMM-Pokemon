@@ -38,13 +38,13 @@ test("moves are drawn with the best-matching action the sprite's own artwork has
   assert.equal(Object.keys(B.TYPE_COLORS).length, 18);
 });
 
-test("particles move, expire, respect delays and a hard limit", () => {
-  const fx = new B.Fx(10, seeded(4));
+test("particles move, expire and respect delays, with no cap on how many", () => {
+  const fx = new B.Fx(seeded(4));
   fx.stream({ x: 0, y: 0 }, { x: 100, y: 0 }, "#f00", { n: 2, duration: 0.5, stagger: 0.25, jitter: 0 });
   assert.equal(fx.visible().length, 1);
   fx.step(0.25); assert.equal(fx.particles[0].x, 50); fx.step(0.01); assert.equal(fx.visible().length, 2);
   fx.step(0.3); assert.equal(fx.particles.length, 1); fx.step(0.3); assert.equal(fx.particles.length, 0);
-  fx.burst(5, 5, "#0f0", 30); assert.equal(fx.particles.length, 10); assert.equal(fx.add({}), null);
+  fx.burst(5, 5, "#0f0", 3000); assert.equal(fx.particles.length, 3000); assert.ok(fx.add({}));
   for (let i = 0; i < 60; i++) fx.step(0.05); assert.equal(fx.particles.length, 0);
   fx.bolt({ x: 0, y: 0 }, { x: 60, y: 0 }, "#ff0"); fx.ring(1, 1, "#fff"); fx.rise(1, 1, "#fff", { n: 2, text: "▲" });
   assert.ok(fx.particles.some((p) => p.ring)); assert.ok(fx.particles.some((p) => p.text === "▲"));
@@ -197,6 +197,6 @@ test("a full party keeps wandering, meeting and recovering, using its real learn
   assert.ok(arena.count >= 8, `battles: ${arena.count}`);
   assert.ok(used.size >= 25, `distinct moves: ${used.size}`);
   for (const id of used) assert.ok(ids.some((s) => species.get(s).moves.includes(id)) || moves[id].flags.includes("metronome") || id === "struggle", id);
-  assert.ok(longest / 60 < 200, `longest battle ${longest / 60}s`); assert.ok(peak <= 180);
+  assert.ok(longest / 60 < 200, `longest battle ${longest / 60}s`); assert.ok(peak > 0);
   for (const state of ["idle", "walk", "fidget", "battle", "faint", "wake"]) assert.ok(states.has(state), state);
 });

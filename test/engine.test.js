@@ -23,10 +23,11 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
   assert.notEqual(validateConfig(valid).config.party[3], valid.party[3]); // Entries are copied.
   for (const skipActions of ["Faint", ["a b"], [1], ["../x"], new Array(65).fill("A")]) assert.deepEqual(validateConfig({ skipActions }).invalid, ["skipActions"]);
   for (const party of ["pikachu", [], [""], ["../x"], ["a/b"], [0], [1.5], [{}], [{ pokemon: "x", extra: 1 }], [{ pokemon: "x", moves: [] }], [{ pokemon: "x", moves: ["a", "b", "c", "d", "e"] }],
-    [{ pokemon: "x", level: 0 }], [{ pokemon: "x", sprite: "../1" }], [{ pokemon: "x", shiny: 1 }], new Array(13).fill("pikachu")]) {
+    [{ pokemon: "x", level: 0 }], [{ pokemon: "x", sprite: "../1" }], [{ pokemon: "x", shiny: 1 }]]) {
     assert.deepEqual(validateConfig({ party }).invalid, ["party"], JSON.stringify(party));
     assert.deepEqual(validateConfig({ party }).config.party, defaults.party);
   }
+  assert.equal(validateConfig({ party: new Array(200).fill("pikachu") }).config.party.length, 200); // No upper limit.
   for (const [key, value] of [["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
     ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
