@@ -40,7 +40,7 @@ const texts = (events) => events.filter((e) => e.e === "text").map((e) => e.text
 
 /* Fake browser. `sprites` maps a folder name to its AnimData XML; images load
  * automatically with the sizes that XML implies. */
-function environment({ sprites = {}, serveData = true, missing = [] } = {}) {
+function environment({ sprites = {}, serveData = true, missing = [], variants = require("../data/variants.json") } = {}) {
   const records = new Set(), images = [], timers = new Map(), frames = new Map(), made = [], requests = [], warnings = [], selectors = [];
   class Target {
     addEventListener(name, fn, options) { records.add({ target: this, name, fn, options }); }
@@ -71,6 +71,7 @@ function environment({ sprites = {}, serveData = true, missing = [] } = {}) {
       requests.push(url);
       if (url === "data/moves.json") return serveData ? respond("", moves) : respond();
       if (url === "data/pokedex.json") return serveData ? respond("", pokedex) : respond();
+      if (url === "data/variants.json") return serveData && variants ? respond("", variants) : respond();
       const match = /^sprites\/([^/]+)\/AnimData\.xml$/.exec(url);
       return respond(match ? sprites[match[1]] : undefined);
     } });

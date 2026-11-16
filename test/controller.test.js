@@ -5,7 +5,7 @@ const os = require("node:os");
 const vm = require("node:vm");
 const Engine = require("../lib/pk-engine.js");
 const Controller = require("../lib/pk-controller.js");
-const { fs, path, anim, fighterXml, plainXml, sizes, environment } = require("./helpers.js");
+const { fs, path, anim, fighterXml, plainXml, sizes, seeded, environment } = require("./helpers.js");
 
 const sprites = { "0025": fighterXml, "0007": fighterXml, "0004": fighterXml, "0001": fighterXml, "0132": plainXml, "0025-0000-0001": fighterXml };
 const quiet = { idleMin: 300, idleMax: 300, sleepAfter: 3600, reducedMotion: "never" };
@@ -13,7 +13,7 @@ const quiet = { idleMin: 300, idleMax: 300, sleepAfter: 3600, reducedMotion: "ne
 test("nothing is shown until data and artwork have loaded; then each member appears with its own sprite", async () => {
   const e = environment({ sprites });
   const c = new Controller({ ...quiet, party: ["Pikachu", 7, { pokemon: "charmander", level: 30, moves: ["Ember", "not-a-move", "Scratch"] }] }, e.env);
-  assert.equal(c.pets.length, 0); assert.deepEqual(e.requests, ["data/moves.json", "data/pokedex.json"]);
+  assert.equal(c.pets.length, 0); assert.deepEqual(e.requests, ["data/moves.json", "data/pokedex.json", "data/variants.json"]);
   await e.settle();
   assert.deepEqual(c.pets.map((p) => [p.cat.name, p.cat.level, p.member.folder, p.cat.fixedMoves]), [["Pikachu", 50, "0025", null], ["Squirtle", 50, "0007", null], ["Charmander", 30, "0004", ["ember", "scratch"]]]);
   assert.match(e.warnings.join("\n"), /unknown move "notamove" for Charmander/);
@@ -166,6 +166,40 @@ test("large sprites take up only the space they are drawn in: body, battle dista
   await e2.settle(); assert.equal(c2.cats[0].size, 224); c2.destroy();
 });
 
+test("randomParty draws distinct Pokémon that have artwork; randomVariants draws one of their available sprites", async () => {
+  const variants = require("../data/variants.json"), asked = [], hooks = (seed) => ({ random: seeded(seed), requestSprites: (id) => asked.push(id) });
+  // A random party replaces `party`: the right number, no repeats, base sprites only.
+  const e = environment(), c = new Controller({ ...quiet, party: ["mew"], randomParty: 30 }, e.env, undefined, hooks(5));
+  await e.settle();
+  assert.equal(c.pets.length, 30); assert.equal(new Set(c.pets.map((p) => p.member.species.num)).size, 30);
+  for (const p of c.pets) { assert.equal(p.member.id, String(p.member.species.num).padStart(4, "0")); assert.ok(variants[p.member.species.num].includes(p.member.id)); }
+  assert.ok(!c.pets.some((p) => p.cat.name === "Mew") || c.pets.length === 30);
+  assert.deepEqual(asked, c.pets.map((p) => p.member.id)); // Each is then downloaded the usual way.
+  c.destroy();
+  // Different loads give different parties; the same random source gives the same one.
+  const party = async (seed, config = {}) => { const env = environment(), k = new Controller({ ...quiet, randomParty: 8, autoDownload: false, ...config }, env.env, undefined, { random: seeded(seed) }); await env.settle(); const ids = k.pets.map((p) => p.member.id); k.destroy(); return ids; };
+  assert.deepEqual(await party(1), await party(1)); assert.notDeepEqual(await party(1), await party(2));
+  // With randomVariants each member gets any sprite path that exists for it, base included.
+  const mixed = await party(7, { randomParty: 200, randomVariants: true });
+  assert.equal(mixed.length, 200); assert.equal(new Set(mixed.map((id) => id.slice(0, 4))).size, 200);
+  for (const id of mixed) assert.ok(variants[Number(id.slice(0, 4))].includes(id), id);
+  assert.ok(mixed.some((id) => id.length > 4) && mixed.some((id) => id.length === 4)); assert.ok(mixed.some((id) => /^\d{4}\/0000\/0001$/.test(id)), "some are shiny");
+  // More than exist: everyone appears before anyone repeats.
+  const all = Object.keys(variants).length, many = await party(3, { randomParty: all + 5, randomVariants: true });
+  assert.equal(many.length, all + 5); assert.equal(new Set(many.slice(0, all).map((id) => id.slice(0, 4))).size, all);
+  // randomVariants also applies to a listed party, except where a sprite or shiny is given.
+  const picks = new Set();
+  for (let seed = 1; seed <= 25; seed++) {
+    const env = environment(), k = new Controller({ ...quiet, randomVariants: true, autoDownload: false, party: ["pikachu", { pokemon: "pikachu", sprite: "25/6" }, { pokemon: "pikachu", shiny: true }] }, env.env, undefined, { random: seeded(seed) });
+    await env.settle(); const ids = k.pets.map((p) => p.member.id); k.destroy();
+    assert.ok(variants[25].includes(ids[0])); picks.add(ids[0]); assert.deepEqual(ids.slice(1), ["0025/0006", "0025/0000/0001"]);
+  }
+  assert.ok(picks.size >= 4, [...picks].join(" "));
+  // Without the variant list, random parties still work (any species, base sprite) and randomVariants does nothing.
+  const bare = environment({ variants: null }), b = new Controller({ ...quiet, randomParty: 5, randomVariants: true, autoDownload: false }, bare.env, undefined, { random: seeded(4) });
+  await bare.settle(); assert.equal(b.pets.length, 5); assert.ok(b.pets.every((p) => p.member.id.length === 4)); b.destroy();
+});
+
 test("a party can be any size", async () => {
   const e = environment({ sprites: { "0025": fighterXml } });
   const c = new Controller({ ...quiet, party: new Array(40).fill("pikachu"), battles: false }, e.env);
@@ -208,7 +242,7 @@ test("the module wires configuration, data URLs and the download request to the 
   assert.deepEqual([...m.getScripts()], ["pk-sprites", "pk-engine", "pk-mechanics", "pk-battle", "pk-controller"].map((n) => `m/lib/${n}.js`)); assert.deepEqual([...m.getStyles()], ["m/MMM-Pokemon.css"]);
   m.start(); assert.equal(m.config.scale, 2); assert.equal(m.getDom(), m.pk.element);
   await e.settle();
-  assert.deepEqual(urls.slice(0, 3), ["m/data/moves.json", "m/data/pokedex.json", "m/sprites/0133/AnimData.xml"]);
+  assert.deepEqual(urls.slice(0, 4), ["m/data/moves.json", "m/data/pokedex.json", "m/data/variants.json", "m/sprites/0133/AnimData.xml"]);
   assert.equal(JSON.stringify(sent), JSON.stringify([["POKEMON_FETCH_SPRITES", { id: "0133" }]]));
   m.socketNotificationReceived("OTHER", {}); m.socketNotificationReceived("POKEMON_SPRITES", { folder: "0133", ok: true }); await e.settle();
   assert.equal(urls.filter((u) => u === "m/sprites/0133/AnimData.xml").length, 2);

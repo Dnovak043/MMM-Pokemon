@@ -85,6 +85,31 @@ party: [
 Species data (types, base stats, learnset) is that of the base form; `sprite`
 and `shiny` only change the artwork.
 
+### Random parties
+
+```javascript
+config: {
+  randomParty: 6,        // six random Pokémon, re-drawn every time the mirror loads
+  randomVariants: true   // each with a random available sprite: a form, a shiny, a gender variant …
+}
+```
+
+- `randomParty: N` replaces `party` with N different Pokémon chosen from those
+  that have artwork in Sprite Collab (979 of the 1,025 at the time of writing).
+  Nobody repeats until all of them have been used.
+- `randomVariants: true` gives every member — random or listed in `party` —
+  one of the sprites that exist for it, chosen evenly: the regular one, the
+  shiny, a female variant, an alternate form, and so on (for Pikachu:
+  `25`, `25/0/1`, `25/0/0/2`, `25/6`, …). Entries with their own `sprite` or
+  `shiny` keep it. Only the artwork changes; types, stats and moves stay those
+  of the base form.
+
+Which sprites exist comes from `data/variants.json`, a snapshot of the Sprite
+Collab tracker. Run `node scripts/build-variants.js` to refresh it when new
+sprites have been added to the repository. Each new sprite is downloaded the
+first time it is drawn, so random parties need `autoDownload` (or a
+well-stocked `sprites/` folder) and a network connection for newcomers.
+
 ## Battles
 
 1. Two sprites that meet stop and face each other. HP is calculated from base
@@ -152,6 +177,8 @@ Pokémon learns them, so they only appear if you list them under `moves`.
 | Option | Default | Notes |
 | --- | --- | --- |
 | `party` | four starters | One or more entries, see above. There is no upper limit; very large parties cost more CPU and crowd the screen |
+| `randomParty` | `0` | A number of Pokémon to pick at random on every load, instead of `party`. See [Random parties](#random-parties) |
+| `randomVariants` | `false` | `true` gives each member a random one of its available sprites (forms, shiny, gender) |
 | `level` | `50` | 1–100, for members without their own |
 | `battles` | `true` | Whether sprites battle when they meet |
 | `battleRange` | `24` | 0–300 pixels between two sprites at which a battle starts, measured between what is visibly drawn of each (not its padded frame), so large Pokémon must come as close as small ones |
@@ -192,7 +219,8 @@ before following pointer or region commands.
 ```sh
 npm install
 npm run check                 # lint + tests
-npm install --no-save esbuild && npm run build:data   # regenerate data/ from Pokémon Showdown
+npm install --no-save esbuild && npm run build:data   # regenerate moves and species from Pokémon Showdown
+npm run build:variants        # refresh the list of available sprite variants
 ```
 
 `lib/pk-mechanics.js` is the battle rules (pure, no DOM); `lib/pk-battle.js`
@@ -207,6 +235,8 @@ draws.
 - `data/moves.json` and `data/pokedex.json` are generated from the data files of
   [Pokémon Showdown](https://github.com/smogon/pokemon-showdown) (MIT). Only
   plain data is taken; move behavior is implemented here.
+- `data/variants.json` lists which sprite paths exist, read from the Sprite
+  Collab tracker; it contains no artwork.
 - Sprites are **not** included. They are downloaded on request from PMD Sprite
   Collab and remain subject to their contributors' credits (`credits.txt` in
   each folder) and that project's terms; check them before redistributing.

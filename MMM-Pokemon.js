@@ -3,7 +3,7 @@
 Module.register("MMM-Pokemon", {
   requiresVersion: "2.25.0",
   defaults: {
-    party: ["pikachu", "charmander", "squirtle", "bulbasaur"], level: 50,
+    party: ["pikachu", "charmander", "squirtle", "bulbasaur"], randomParty: 0, randomVariants: false, level: 50,
     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
     startPosition: { x: 0.5, y: 0.7 }, inset: 16, reducedMotion: "auto", avoid: [], avoidMargin: 4, skipActions: [],
     battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,

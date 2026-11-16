@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "check": "node --run lint && node --run test",
     "fetch:sprites": "node scripts/fetch-sprites.js",
-    "build:data": "node scripts/build-data.js"
+    "build:data": "node scripts/build-data.js",
+    "build:variants": "node scripts/build-variants.js"
   },
   "engines": {
     "node": ">=20"

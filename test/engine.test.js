@@ -13,7 +13,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
   assert.equal(validateConfig(bad).invalid.length, 11);
   assert.equal(validateConfig({ idleMin: 20, idleMax: 10 }).config.idleMin, 4);
   const valid = { party: ["Mr. Mime", 25, "farfetch’d", { pokemon: "eevee", moves: ["Quick Attack", "swift"], level: 30, shiny: true }, { pokemon: 6, sprite: "6/1" }],
-    level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
+    randomParty: 500, randomVariants: true, level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
     sleepAfter: 5, sleepDuration: 3600, startPosition: { x: 0, y: 1 }, inset: 500, reducedMotion: "never",
     avoid: ["MMM-Drawer", "#panel .sheet"], avoidMargin: 100, skipActions: ["Faint", "Special_1"],
     battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false,
@@ -28,7 +28,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
     assert.deepEqual(validateConfig({ party }).config.party, defaults.party);
   }
   assert.equal(validateConfig({ party: new Array(200).fill("pikachu") }).config.party.length, 200); // No upper limit.
-  for (const [key, value] of [["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
+  for (const [key, value] of [["randomParty", -1], ["randomParty", 2.5], ["randomParty", "6"], ["randomVariants", 1], ["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
     ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
   }

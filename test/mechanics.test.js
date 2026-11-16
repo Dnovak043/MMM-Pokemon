@@ -298,6 +298,16 @@ test("every move in the game can be used, by either side, without breaking the b
   assert.ok(turns / fights > 2 && turns / fights < 15);
 });
 
+test("the variant list names real Pokémon and well-formed Sprite Collab paths", () => {
+  const variants = require("../data/variants.json"), nums = new Set(pokedex.species.map((s) => s.num));
+  assert.ok(Object.keys(variants).length > 900);
+  for (const [num, ids] of Object.entries(variants)) {
+    assert.ok(nums.has(Number(num)), num); assert.ok(ids.length >= 1); assert.equal(new Set(ids).size, ids.length);
+    for (const id of ids) { assert.match(id, /^\d{4}(?:\/\d{4}){0,3}$/); assert.equal(Number(id.slice(0, 4)), Number(num)); }
+  }
+  assert.ok(variants[25].includes("0025") && variants[25].includes("0025/0000/0001"));
+});
+
 test("coverage is reported honestly", () => {
   const tally = {}; for (const m of Object.values(moves)) { const c = M.coverage(m); tally[c] = (tally[c] || 0) + 1; }
   assert.deepEqual(Object.keys(tally).sort(), ["custom", "data", "data+simplified"]);
