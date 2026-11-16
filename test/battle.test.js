@@ -14,7 +14,7 @@ function pair(a, b, { gap = 10, options = {}, random = seeded(1), movesA = null,
     return mon;
   });
   mons[0].x = 300; mons[0].y = 300; mons[1].x = 300 + mons[0].size + gap; mons[1].y = 300;
-  const arena = new B.Arena(mons, { data, ...options }, random);
+  const arena = new B.Arena(mons, { data, moveDelay: 0, ...options }, random); // No pause between moves unless a test asks for one.
   mons.forEach((mon) => { mon.cooldown = 0; });
   return { mons, arena };
 }
@@ -167,6 +167,11 @@ test("interruptions and battle speed", () => {
   const time = (battleSpeed) => { const p = pair("pikachu", "squirtle", { movesA: ["thunderbolt"], movesB: ["tackle"], random: () => 0.5, options: { battleSpeed } }); let n = 0; p.arena.step(1 / 60); finish(p.arena, () => n++); return n / 60; };
   const normal = time(1), fast = time(2);
   assert.ok(normal > 4 && normal < 30, `${normal}s`); assert.ok(Math.abs(fast - normal / 2) < 0.6);
+  // moveDelay adds that pause before each Pokémon's move; here three moves are made.
+  const paced = (moveDelay) => { const p = pair("pikachu", "squirtle", { movesA: ["thunderbolt"], movesB: ["tackle"], random: () => 0.5, options: { moveDelay } }); let n = 0, acts = 0; p.arena.step(1 / 60); const b = p.arena.battles[0], play = b.play.bind(b); b.play = (ev, next) => { if (ev.e === "act") acts++; return play(ev, next); }; finish(p.arena, () => n++); return [n / 60, acts]; };
+  const [none, acts] = paced(0), [slow] = paced(2);
+  assert.equal(acts, 3); assert.ok(Math.abs(none - normal) < 0.05); assert.ok(Math.abs(slow - none - 3 * 2) < 0.2, `${slow} vs ${none}`);
+  assert.equal(new B.Arena([], { data }).options.moveDelay, 0.5);
 });
 
 test("a full party keeps wandering, meeting and recovering, using its real learnsets", () => {

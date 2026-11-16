@@ -124,6 +124,15 @@ test("nameplates, HP bars and text boxes are the same size whatever the sprites'
   scaled.tick(16); scaled.tick(16);
   assert.deepEqual([s3.pets[0].hud.style.width, s3.pets[0].hud.style.fontSize, s3.labels[0].element.style.width, s3.labels[0].element.style.fontSize], ["96px", "16px", "480px", "19px"]);
   s3.destroy();
+  // Each size can be set outright.
+  const custom = environment({ sprites: { "0025": fighterXml, "0007": fighterXml } });
+  const k = new Controller({ ...quiet, party: ["pikachu", "squirtle"], nameSize: 20, hpBarWidth: 150, hpBarHeight: 12, textSize: 28, textBoxWidth: 640 }, custom.env);
+  await custom.settle(); k.cats.forEach((cat) => { cat.cooldown = 0; }); k.cats[1].x = k.cats[0].x + 80; k.cats[1].y = k.cats[0].y;
+  custom.tick(16); custom.tick(16);
+  const hud = k.pets[0].hud.style, box = k.labels[0].element.style;
+  assert.deepEqual([hud.width, hud.fontSize, k.pets[0].bar.style.height, box.width, box.fontSize], ["150px", "20px", "12px", "640px", "28px"]);
+  assert.equal(/translate\((-?\d+)px/.exec(hud.transform)[1], String(Math.round(k.cats[0].x + (64 - 150) / 2)));
+  k.destroy();
 });
 
 test("commands, visibility, reduced motion and avoided modules", async () => {

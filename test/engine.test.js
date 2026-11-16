@@ -16,7 +16,8 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
     level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
     sleepAfter: 5, sleepDuration: 3600, startPosition: { x: 0, y: 1 }, inset: 500, reducedMotion: "never",
     avoid: ["MMM-Drawer", "#panel .sheet"], avoidMargin: 100, skipActions: ["Faint", "Special_1"],
-    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, showText: false, showHp: false, autoDownload: false };
+    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false,
+    nameSize: 14, hpBarWidth: 120, hpBarHeight: 8, textSize: 20, textBoxWidth: 500 };
   assert.deepEqual(validateConfig(valid).config, valid);
   assert.deepEqual(validateConfig(valid).invalid, []);
   assert.notEqual(validateConfig(valid).config.party[3], valid.party[3]); // Entries are copied.
@@ -27,7 +28,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
     assert.deepEqual(validateConfig({ party }).config.party, defaults.party);
   }
   for (const [key, value] of [["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
-    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null]]) {
+    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
   }
 });

@@ -50,6 +50,12 @@
   white-space: nowrap;
 }
 
+.mmm-pokemon-name {
+  /* Stay centred over the bar even when the name is wider than it. */
+  display: flex;
+  justify-content: center;
+}
+
 .mmm-pokemon-hp {
   box-sizing: border-box;
   height: 0.5em;

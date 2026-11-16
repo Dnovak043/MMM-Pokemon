@@ -158,8 +158,14 @@ Pokémon learns them, so they only appear if you list them under `moves`.
 | `battleCooldown` | `30` | 0–3600 seconds a sprite is left alone after a battle |
 | `faintTime` | `8` | 1–600 seconds the loser stays down |
 | `battleSpeed` | `1` | 0.25–4; 2 plays battles twice as fast |
+| `moveDelay` | `0.5` | 0–10 seconds of pause before each Pokémon's move in a battle |
 | `showText` | `true` | Battle text line |
 | `showHp` | `true` | Names and HP bars during battles |
+| `nameSize` | `0` | Nameplate text size in pixels (6–64); `0` = automatic from `scale` |
+| `hpBarWidth` | `0` | Health bar width in pixels (16–600); `0` = automatic |
+| `hpBarHeight` | `0` | Health bar thickness in pixels (2–60); `0` = automatic (half the name size) |
+| `textSize` | `0` | Battle text size in pixels (6–96); `0` = automatic |
+| `textBoxWidth` | `0` | Battle text box width in pixels (80–2000); `0` = automatic. The box grows taller to fit its text |
 | `autoDownload` | `true` | Fetch missing artwork from Sprite Collab |
 | `skipActions` | `[]` | Action names (e.g. `["Hop"]`) never to play as a fidget between walks |
 | `mode` | `"wander"` | `"wander"`, `"mouse"` or `"touch"` (follow the pointer) |
