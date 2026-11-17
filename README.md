@@ -214,6 +214,14 @@ Invalid values fall back to their defaults individually.
 MagicMirror region name such as `"top_left"`). Sprites in a battle finish it
 before following pointer or region commands.
 
+### When MagicMirror hides the module
+
+`module.hide()` calls `suspend()`, which stops the module completely: the
+animation timer, every window and document listener, any artwork still loading
+in the browser, and the sprite download in the node helper. Nothing runs until
+`module.show()` calls `resume()`, which picks everything up where it stopped.
+Commands received while suspended are remembered and applied on resume.
+
 ## Development
 
 ```sh

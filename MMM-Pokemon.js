@@ -23,7 +23,8 @@ Module.register("MMM-Pokemon", {
   },
   getDom() { return this.pk.element; },
   notificationReceived(name, payload) { if (this.pk) this.pk.receive(name, payload); },
-  suspend() { if (this.pk) this.pk.suspend(); },
-  resume() { if (this.pk) this.pk.resume(); },
+  // Hidden by MagicMirror: stop everything, in the browser and in the node helper. Shown: start again.
+  suspend() { if (this.pk) this.pk.suspend(); this.sendSocketNotification("POKEMON_SUSPENDED"); },
+  resume() { this.sendSocketNotification("POKEMON_RESUMED"); if (this.pk) this.pk.resume(); },
   stop() { if (this.pk) this.pk.destroy(); }
 });

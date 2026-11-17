@@ -41,7 +41,7 @@ const texts = (events) => events.filter((e) => e.e === "text").map((e) => e.text
 /* Fake browser. `sprites` maps a folder name to its AnimData XML; images load
  * automatically with the sizes that XML implies. */
 function environment({ sprites = {}, serveData = true, missing = [], variants = require("../data/variants.json") } = {}) {
-  const records = new Set(), images = [], timers = new Map(), frames = new Map(), made = [], requests = [], warnings = [], selectors = [];
+  const records = new Set(), images = [], timers = new Map(), frames = new Map(), made = [], requests = [], warnings = [], selectors = [], signals = [];
   class Target {
     addEventListener(name, fn, options) { records.add({ target: this, name, fn, options }); }
     removeEventListener(name, fn) { for (const r of records) if (r.target === this && r.name === name && r.fn === fn) records.delete(r); }
@@ -67,8 +67,9 @@ function environment({ sprites = {}, serveData = true, missing = [], variants = 
     console: { warn: (text) => warnings.push(text) }, getComputedStyle: (node) => node.css || {},
     setTimeout: (fn) => { timers.set(++next, fn); return next; }, clearTimeout: (id) => timers.delete(id),
     requestAnimationFrame: (fn) => { frames.set(++next, fn); return next; }, cancelAnimationFrame: (id) => frames.delete(id),
-    fetch: (url) => {
-      requests.push(url);
+    AbortController,
+    fetch: (url, options) => {
+      requests.push(url); if (options && options.signal) signals.push(options.signal);
       if (url === "data/moves.json") return serveData ? respond("", moves) : respond();
       if (url === "data/pokedex.json") return serveData ? respond("", pokedex) : respond();
       if (url === "data/variants.json") return serveData && variants ? respond("", variants) : respond();
@@ -77,6 +78,6 @@ function environment({ sprites = {}, serveData = true, missing = [], variants = 
     } });
   const tick = (ms = 16) => { time += ms; const pending = [...timers.values(), ...frames.values()]; timers.clear(); frames.clear(); pending.forEach((fn) => fn()); };
   const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve)); };
-  return { env, doc, media, images, timers, frames, records, made, requests, warnings, selectors, tick, settle };
+  return { env, doc, media, images, timers, frames, records, made, requests, warnings, selectors, signals, tick, settle };
 }
 module.exports = { fs, path, moves, pokedex, data, species, anim, fighterXml, plainXml, sizes, pmd, seeded, duel, texts, environment };
