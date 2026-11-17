@@ -16,7 +16,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
     randomParty: 500, randomVariants: true, level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
     sleepAfter: 5, sleepDuration: 3600, startPosition: { x: 0, y: 1 }, inset: 500, reducedMotion: "never",
     avoid: ["MMM-Drawer", "#panel .sheet"], avoidMargin: 100, skipActions: ["Faint", "Special_1"],
-    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false,
+    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false, unloadOnSuspend: true,
     nameSize: 14, hpBarWidth: 120, hpBarHeight: 8, textSize: 20, textBoxWidth: 500 };
   assert.deepEqual(validateConfig(valid).config, valid);
   assert.deepEqual(validateConfig(valid).invalid, []);
@@ -29,7 +29,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
   }
   assert.equal(validateConfig({ party: new Array(200).fill("pikachu") }).config.party.length, 200); // No upper limit.
   for (const [key, value] of [["randomParty", -1], ["randomParty", 2.5], ["randomParty", "6"], ["randomVariants", 1], ["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
-    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
+    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["unloadOnSuspend", 1], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
   }
 });

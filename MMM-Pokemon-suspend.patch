@@ -1,0 +1,647 @@
+diff --git a/MMM-Pokemon.js b/MMM-Pokemon.js
+index cbd5d33..b281542 100644
+--- a/MMM-Pokemon.js
++++ b/MMM-Pokemon.js
+@@ -6,7 +6,7 @@ Module.register("MMM-Pokemon", {
+     party: ["pikachu", "charmander", "squirtle", "bulbasaur"], randomParty: 0, randomVariants: false, level: 50,
+     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
+     startPosition: { x: 0.5, y: 0.7 }, inset: 16, reducedMotion: "auto", avoid: [], avoidMargin: 4, skipActions: [],
+-    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,
++    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true, unloadOnSuspend: false,
+     nameSize: 0, hpBarWidth: 0, hpBarHeight: 0, textSize: 0, textBoxWidth: 0
+   },
+   getScripts() { return ["pk-sprites", "pk-engine", "pk-mechanics", "pk-battle", "pk-controller"].map((name) => this.file(`lib/${name}.js`)); },
+@@ -23,7 +23,8 @@ Module.register("MMM-Pokemon", {
+   },
+   getDom() { return this.pk.element; },
+   notificationReceived(name, payload) { if (this.pk) this.pk.receive(name, payload); },
+-  suspend() { if (this.pk) this.pk.suspend(); },
+-  resume() { if (this.pk) this.pk.resume(); },
++  // Hidden by MagicMirror: stop everything, in the browser and in the node helper. Shown: start again.
++  suspend() { if (this.pk) this.pk.suspend(); this.sendSocketNotification("POKEMON_SUSPENDED"); },
++  resume() { this.sendSocketNotification("POKEMON_RESUMED"); if (this.pk) this.pk.resume(); },
+   stop() { if (this.pk) this.pk.destroy(); }
+ });
+diff --git a/README.md b/README.md
+index 5cfaeb3..7310b54 100644
+--- a/README.md
++++ b/README.md
+@@ -194,6 +194,7 @@ Pokémon learns them, so they only appear if you list them under `moves`.
+ | `textSize` | `0` | Battle text size in pixels (6–96); `0` = automatic |
+ | `textBoxWidth` | `0` | Battle text box width in pixels (80–2000); `0` = automatic. The box grows taller to fit its text |
+ | `autoDownload` | `true` | Fetch missing artwork from Sprite Collab |
++| `unloadOnSuspend` | `false` | When MagicMirror hides the module, also release the artwork, the party and the game data from memory. The module starts afresh when shown again |
+ | `skipActions` | `[]` | Action names (e.g. `["Hop"]`) never to play as a fidget between walks |
+ | `mode` | `"wander"` | `"wander"`, `"mouse"` or `"touch"` (follow the pointer) |
+ | `scale` | `2` | Integer 1–4 enlargement of the artwork |
+@@ -214,6 +215,22 @@ Invalid values fall back to their defaults individually.
+ MagicMirror region name such as `"top_left"`). Sprites in a battle finish it
+ before following pointer or region commands.
+ 
++### When MagicMirror hides the module
++
++`module.hide()` calls `suspend()`, which stops the module completely: the
++animation timer, every window and document listener, any artwork still loading
++in the browser, and the sprite download in the node helper. Nothing runs until
++`module.show()` calls `resume()`, which picks everything up where it stopped.
++Commands received while suspended are remembered and applied on resume.
++
++With `unloadOnSuspend: true` the module also lets go of everything it holds:
++its elements are removed from the page and the sprite sheets, the party and the
++game data are dropped, so the browser can free that memory (including the
++sprite textures on the GPU). When the module is shown again it loads everything
++afresh: battles, positions and HP start over, a random party is drawn again,
++and a mode or region set by notification is forgotten. Show/hide and
++pause/resume commands are still remembered.
++
+ ## Development
+ 
+ ```sh
+diff --git a/lib/collab.js b/lib/collab.js
+index a2bcaba..6f65fb4 100644
+--- a/lib/collab.js
++++ b/lib/collab.js
+@@ -11,13 +11,15 @@ const folderOf = (id) => id.replaceAll("/", "-");
+ 
+ /* `id` is the sprite's path under sprite/ in the repository: "0025", or
+  * "0025/0000/0001" for a form/shiny/gender variant. Resolves to
+- * { folder, saved, cached }; rejects when the sprite cannot be fetched. */
+-async function fetchSprite(id, root, log = () => {}) {
++ * { folder, saved, cached }; rejects when the sprite cannot be fetched.
++ * Aborting `signal` stops the download; the folder is then left incomplete and
++ * the next call starts it again. */
++async function fetchSprite(id, root, log = () => {}, signal = undefined) {
+   if (!ID.test(id)) throw new Error(`invalid sprite id "${id}"`);
+   const target = path.join(root, folderOf(id));
+   if (["AnimData.xml", "Walk-Anim.png", "Idle-Anim.png"].every((file) => fs.existsSync(path.join(target, file)))) return { folder: folderOf(id), saved: 0, cached: true };
+   const get = async (file) => {
+-    const response = await fetch(`${SOURCE}/${file}`);
++    const response = await fetch(`${SOURCE}/${file}`, signal ? { signal } : undefined);
+     if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
+     return Buffer.from(await response.arrayBuffer());
+   };
+@@ -28,13 +30,13 @@ async function fetchSprite(id, root, log = () => {}) {
+   let saved = 0;
+   for (const file of files) {
+     try { fs.writeFileSync(path.join(target, `${file}-Anim.png`), await get(`${id}/${file}-Anim.png`)); saved++; }
+-    catch (error) { log(`skipped ${error.message}`); }
++    catch (error) { if (signal && signal.aborted) throw error; log(`skipped ${error.message}`); }
+   }
+   // Credits live with the base form; keep them next to the artwork.
+   const parts = id.split("/");
+   for (let depth = parts.length; depth >= 1; depth--) {
+     try { fs.writeFileSync(path.join(target, "credits.txt"), await get(`${parts.slice(0, depth).join("/")}/credits.txt`)); break; }
+-    catch { /* try the parent form */ }
++    catch (error) { if (signal && signal.aborted) throw error; /* otherwise try the parent form */ }
+   }
+   fs.writeFileSync(path.join(target, "AnimData.xml"), xml); // Last, so a partial download is retried.
+   return { folder: folderOf(id), saved, cached: false };
+diff --git a/lib/pk-controller.js b/lib/pk-controller.js
+index 24589de..df431c8 100644
+--- a/lib/pk-controller.js
++++ b/lib/pk-controller.js
+@@ -17,6 +17,8 @@
+       this.config = Engine.validateConfig(config).config;
+       this.measured = -Infinity; this.sliding = false;
+       this.timer = null; this.frame = null; this.disposers = []; this.destroyed = false;
++      // Loads in flight: `run` changes whenever they are cancelled, so late answers are ignored.
++      this.run = 0; this.aborter = null; this.loads = new Set();
+       this.keys = new WeakMap(); this.nextKey = 0;
+       this.paused = false; this.suspended = false; this.hidden = false;
+       this.element = this.make("mmm-pokemon-overlay");
+@@ -24,6 +26,14 @@
+       this.pets = []; this.cats = []; this.dots = []; this.labels = []; this.data = null; this.species = null;
+       this.arena = new Battle.Arena(this.cats, this.config);
+       this.media = env.matchMedia("(prefers-reduced-motion: reduce)");
++      this.attach();
++      this.sync();
++      this.loadData();
++    }
++    /* Window, document and media listeners. Removed while suspended, so nothing can wake the module. */
++    attach() {
++      if (this.disposers.length) return;
++      const env = this.env;
+       this.listen(env, "resize", () => this.resize());
+       this.listen(this.doc, "visibilitychange", () => this.sync());
+       this.listen(env, "pagehide", () => this.stop());
+@@ -37,9 +47,8 @@
+       this.listen(this.doc, "pointerdown", (event) => {
+         if (event.pointerType === "touch" && event.isPrimary !== false) this.point(event, "touch");
+       });
+-      this.sync();
+-      this.loadData();
+     }
++    detach() { this.disposers.splice(0).forEach((dispose) => dispose()); }
+     make(className, parent = null) {
+       const element = this.doc.createElement("div");
+       element.className = className;
+@@ -47,12 +56,25 @@
+       return element;
+     }
+     /* ---- data and party ---- */
++    /* Fetch options that let cancel() abort the request. */
++    abortable() {
++      if (!this.aborter && typeof this.env.AbortController === "function") this.aborter = new this.env.AbortController();
++      return this.aborter ? { signal: this.aborter.signal } : undefined;
++    }
++    /* Drop every load in flight: abort fetches, stop image downloads, ignore late answers. */
++    cancel() {
++      this.run++;
++      if (this.aborter) this.aborter.abort();
++      this.aborter = null;
++      for (const cancel of [...this.loads]) cancel();
++    }
+     loadData() {
+       if (typeof this.env.fetch !== "function") return;
+-      const json = (name) => this.env.fetch(`${this.urls.data}/${name}.json`).then((response) => { if (!response.ok) throw new Error(name); return response.json(); });
++      const run = this.run;
++      const json = (name) => this.env.fetch(`${this.urls.data}/${name}.json`, this.abortable()).then((response) => { if (!response.ok) throw new Error(name); return response.json(); });
+       // The list of sprite variants is only needed for random choices; everything else works without it.
+       Promise.all([json("moves"), json("pokedex"), json("variants").catch(() => null)])
+-        .then(([moves, pokedex, variants]) => this.setData(moves, pokedex, variants)).catch(() => {}); // Without data nothing is shown.
++        .then(([moves, pokedex, variants]) => { if (run === this.run) this.setData(moves, pokedex, variants); }).catch(() => {}); // Without data nothing is shown.
+     }
+     setData(moves, pokedex, variants = null) {
+       if (this.destroyed || this.data) return;
+@@ -115,18 +137,25 @@
+     }
+     /* Decode one image; `done` receives its URL and pixel size, or null. */
+     load(url, done) {
+-      const image = new this.env.Image();
+-      this.listen(image, "load", () => done({ url, width: image.naturalWidth, height: image.naturalHeight, element: image }));
+-      this.listen(image, "error", () => done(null));
++      const image = new this.env.Image(), options = { passive: true, capture: true };
++      const release = () => {
++        image.removeEventListener("load", onLoad, options); image.removeEventListener("error", onError, options);
++        this.loads.delete(cancel);
++      };
++      const onLoad = () => { release(); done({ url, width: image.naturalWidth, height: image.naturalHeight, element: image }); };
++      const onError = () => { release(); done(null); };
++      const cancel = () => { release(); image.src = ""; }; // An empty source stops the download.
++      image.addEventListener("load", onLoad, options); image.addEventListener("error", onError, options);
++      this.loads.add(cancel);
+       image.src = url;
+     }
+     /* AnimData.xml lists the actions this sprite has and their frame sizes and
+      * timings; each action is its own sheet. */
+     loadFolder(pet) {
+       if (typeof this.env.fetch !== "function") return;
+-      const url = `${this.urls.sprites}/${pet.member.folder}`;
+-      this.env.fetch(`${url}/AnimData.xml`).then((response) => (response.ok ? response.text() : "")).then((xml) => {
+-        if (this.destroyed) return;
++      const url = `${this.urls.sprites}/${pet.member.folder}`, run = this.run;
++      this.env.fetch(`${url}/AnimData.xml`, this.abortable()).then((response) => (response.ok ? response.text() : "")).then((xml) => {
++        if (this.destroyed || run !== this.run) return;
+         const list = Sprites.parseAnimData(xml);
+         const files = [...new Set(list.map((entry) => entry.file))], images = {};
+         let pending = files.length;
+@@ -134,13 +163,13 @@
+         for (const file of files) {
+           this.load(`${url}/${file}-Anim.png`, (image) => {
+             if (image) images[file] = image;
+-            if (--pending > 0 || this.destroyed) return;
++            if (--pending > 0 || this.destroyed || run !== this.run) return;
+             const walk = list.find((entry) => entry.name === "Walk"), sheet = walk && images[walk.file];
+             const body = sheet ? this.visibleBody(sheet, walk.w, walk.h) : null;
+             if (pet.cat.setSprites(Sprites.pmd(list, images, this.config.skipActions, body))) this.sync(); else this.missing(pet);
+           });
+         }
+-      }).catch(() => this.missing(pet));
++      }).catch(() => { if (run === this.run) this.missing(pet); });
+     }
+     /* Read the Walk sheet's pixels to find how much of each frame is really drawn on. */
+     visibleBody(sheet, fw, fh) {
+@@ -155,12 +184,12 @@
+     }
+     /* No usable artwork on disk: ask the server side to fetch it, once. */
+     missing(pet) {
+-      if (this.destroyed || pet.requested || !this.config.autoDownload || typeof this.hooks.requestSprites !== "function") return;
++      if (this.destroyed || this.suspended || pet.requested || !this.config.autoDownload || typeof this.hooks.requestSprites !== "function") return;
+       pet.requested = true;
+       this.hooks.requestSprites(pet.member.id);
+     }
+     spritesReady(folder, ok) {
+-      if (this.destroyed || !ok) return;
++      if (this.destroyed || this.suspended || !ok) return; // Suspended: resume() looks for the artwork again.
+       for (const pet of this.pets) if (pet.member.folder === folder && pet.cat.sprites.format !== "pmd") this.loadFolder(pet);
+     }
+     /* ---- input and layout ---- */
+@@ -179,6 +208,7 @@
+       for (const cat of this.cats) cat.goToRegion(region, rect);
+     }
+     regionRect(region) {
++      if (this.suspended) return null; // No layout reads while suspended; resume() measures again.
+       // Only validated built-in names reach the selector.
+       const element = this.doc.querySelector(`.region.${region.replaceAll("_", ".")}`);
+       return element ? element.getBoundingClientRect() : null;
+@@ -320,7 +350,7 @@
+     wait() { return this.cats.length ? Math.min(...this.cats.map((cat) => cat.sprites.tick)) : 250; }
+     sync() {
+       this.stop();
+-      if (this.destroyed) return;
++      if (this.destroyed || this.suspended) return; // Suspended: no timer and no drawing.
+       this.render();
+       if (!this.active()) return;
+       this.lastTime = this.env.performance.now();
+@@ -343,8 +373,35 @@
+       };
+       this.timer = this.env.setTimeout(tick, this.wait());
+     }
+-    suspend() { this.suspended = true; this.sync(); }
+-    resume() { this.suspended = false; this.sync(); }
++    /* MagicMirror hid the module: stop the clock, remove every listener and drop loads in flight. */
++    suspend() {
++      if (this.destroyed || this.suspended) return;
++      this.suspended = true;
++      this.stop(); this.detach(); this.cancel();
++      if (this.config.unloadOnSuspend) this.unload();
++    }
++    /* Forget everything that was loaded or drawn: the elements, the artwork they show, the
++     * party and the game data. Nothing refers to a sprite sheet afterwards, so the browser can
++     * free the decoded images and their textures. resume() then starts from nothing. */
++    unload() {
++      for (const pet of this.pets) for (const element of [pet.sprite, pet.shield, pet.hud]) { element.style.backgroundImage = "none"; element.remove(); }
++      for (const item of [...this.labels, ...this.dots]) item.element.remove();
++      this.pets = []; this.cats = []; this.dots = []; this.labels = [];
++      this.data = null; this.species = null; this.variants = null;
++      this.arena = new Battle.Arena(this.cats, this.config);
++      this.keys = new WeakMap(); this.nextKey = 0; this.measured = -Infinity; this.sliding = false;
++    }
++    /* Shown again: listen again, restart whatever suspend() interrupted (or, after an unload,
++     * load everything afresh), and catch up with the window. */
++    resume() {
++      if (this.destroyed || !this.suspended) return;
++      this.suspended = false;
++      this.attach();
++      if (!this.data) this.loadData();
++      else for (const pet of this.pets) if (pet.cat.sprites.format !== "pmd") this.loadFolder(pet);
++      this.resize();
++      this.sync();
++    }
+     receive(name, payload) {
+       if (this.destroyed) return false;
+       const command = Engine.notification(name, payload);
+@@ -360,7 +417,7 @@
+       this.sync(); return true;
+     }
+     destroy() {
+-      this.stop(); this.disposers.splice(0).forEach((dispose) => dispose());
++      this.stop(); this.detach(); this.cancel();
+       this.element.remove(); this.destroyed = true;
+     }
+   };
+diff --git a/lib/pk-engine.js b/lib/pk-engine.js
+index 868886d..64abfb6 100644
+--- a/lib/pk-engine.js
++++ b/lib/pk-engine.js
+@@ -10,7 +10,7 @@
+     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
+     startPosition: Object.freeze({ x: 0.5, y: 0.7 }), inset: 16, reducedMotion: "auto", avoid: Object.freeze([]), avoidMargin: 4,
+     skipActions: Object.freeze([]), battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1,
+-    moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,
++    moveDelay: 0.5, showText: true, showHp: true, autoDownload: true, unloadOnSuspend: false,
+     // Sizes in pixels; 0 means "work it out from `scale`".
+     nameSize: 0, hpBarWidth: 0, hpBarHeight: 0, textSize: 0, textBoxWidth: 0
+   });
+@@ -82,7 +82,7 @@
+       hpBarHeight: (v) => v === 0 || (finite(v) && v >= 2 && v <= 60),
+       textSize: (v) => v === 0 || (finite(v) && v >= 6 && v <= 96),
+       textBoxWidth: (v) => v === 0 || (finite(v) && v >= 80 && v <= 2000),
+-      showText: (v) => typeof v === "boolean", showHp: (v) => typeof v === "boolean", autoDownload: (v) => typeof v === "boolean",
++      showText: (v) => typeof v === "boolean", showHp: (v) => typeof v === "boolean", autoDownload: (v) => typeof v === "boolean", unloadOnSuspend: (v) => typeof v === "boolean",
+       battles: (v) => typeof v === "boolean",
+       battleRange: (v) => finite(v) && v >= 0 && v <= 300,
+       battleCooldown: (v) => finite(v) && v >= 0 && v <= 3600,
+diff --git a/node_helper.js b/node_helper.js
+index 67eb24e..bebe270 100644
+--- a/node_helper.js
++++ b/node_helper.js
+@@ -1,20 +1,49 @@
+ /* MIT license. Server side: downloads missing Sprite Collab artwork into
+- * sprites/ when the browser asks for it (config `autoDownload`). */
++ * sprites/ when the browser asks for it (config `autoDownload`). While the
++ * module is suspended the download in progress is aborted and the queue waits;
++ * both carry on when the module resumes. */
+ "use strict";
+ const path = require("node:path");
+ const NodeHelper = require("node_helper");
+ const { fetchSprite, folderOf, ID } = require("./lib/collab.js");
+ 
+ module.exports = NodeHelper.create({
+-  start() { this.queue = Promise.resolve(); },
++  start() { this.queue = Promise.resolve(); this.paused = false; this.waiting = []; this.aborter = null; },
++  pause() {
++    this.paused = true;
++    if (this.aborter) this.aborter.abort();
++  },
++  unpause() {
++    this.paused = false;
++    this.waiting.splice(0).forEach((go) => go());
++  },
++  /* Resolves at once, or on unpause() while the module is suspended. */
++  ready() { return this.paused ? new Promise((resolve) => { this.waiting.push(resolve); }) : Promise.resolve(); },
++  /* Download one sprite. A download interrupted by a suspend starts again after the resume. */
++  async download(id) {
++    for (;;) {
++      await this.ready();
++      if (this.paused) continue; // Suspended again before the download could start.
++      const aborter = this.aborter = new AbortController();
++      try {
++        const result = await fetchSprite(id, path.join(__dirname, "sprites"), undefined, aborter.signal);
++        if (!result.cached) console.log(`MMM-Pokemon: downloaded sprite ${id} (${result.saved} sheets)`);
++        return true;
++      } catch (error) {
++        if (aborter.signal.aborted) continue;
++        console.error(`MMM-Pokemon: could not download sprite ${id}: ${error.message}`);
++        return false;
++      } finally { this.aborter = null; }
++    }
++  },
+   socketNotificationReceived(name, payload) {
++    if (name === "POKEMON_SUSPENDED") return this.pause();
++    if (name === "POKEMON_RESUMED") return this.unpause();
+     if (name !== "POKEMON_FETCH_SPRITES" || !payload || typeof payload.id !== "string" || !ID.test(payload.id)) return;
+     const id = payload.id;
++    this.unpause(); // Only a module that is showing asks for artwork.
+     // One download at a time; a failure only affects that sprite.
+-    this.queue = this.queue.then(() => fetchSprite(id, path.join(__dirname, "sprites")).then((result) => {
+-      if (!result.cached) console.log(`MMM-Pokemon: downloaded sprite ${id} (${result.saved} sheets)`);
+-      return true;
+-    }, (error) => { console.error(`MMM-Pokemon: could not download sprite ${id}: ${error.message}`); return false; }))
++    this.queue = this.queue.then(() => this.download(id))
+       .then((ok) => this.sendSocketNotification("POKEMON_SPRITES", { folder: folderOf(id), ok }));
+   }
+ });
+diff --git a/test/engine.test.js b/test/engine.test.js
+index 0b3ae3a..6fc82fa 100644
+--- a/test/engine.test.js
++++ b/test/engine.test.js
+@@ -16,7 +16,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
+     randomParty: 500, randomVariants: true, level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
+     sleepAfter: 5, sleepDuration: 3600, startPosition: { x: 0, y: 1 }, inset: 500, reducedMotion: "never",
+     avoid: ["MMM-Drawer", "#panel .sheet"], avoidMargin: 100, skipActions: ["Faint", "Special_1"],
+-    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false,
++    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false, unloadOnSuspend: true,
+     nameSize: 14, hpBarWidth: 120, hpBarHeight: 8, textSize: 20, textBoxWidth: 500 };
+   assert.deepEqual(validateConfig(valid).config, valid);
+   assert.deepEqual(validateConfig(valid).invalid, []);
+@@ -29,7 +29,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
+   }
+   assert.equal(validateConfig({ party: new Array(200).fill("pikachu") }).config.party.length, 200); // No upper limit.
+   for (const [key, value] of [["randomParty", -1], ["randomParty", 2.5], ["randomParty", "6"], ["randomVariants", 1], ["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
+-    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
++    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["unloadOnSuspend", 1], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
+     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
+   }
+ });
+diff --git a/test/helpers.js b/test/helpers.js
+index b811957..43f7f94 100644
+--- a/test/helpers.js
++++ b/test/helpers.js
+@@ -41,7 +41,7 @@ const texts = (events) => events.filter((e) => e.e === "text").map((e) => e.text
+ /* Fake browser. `sprites` maps a folder name to its AnimData XML; images load
+  * automatically with the sizes that XML implies. */
+ function environment({ sprites = {}, serveData = true, missing = [], variants = require("../data/variants.json") } = {}) {
+-  const records = new Set(), images = [], timers = new Map(), frames = new Map(), made = [], requests = [], warnings = [], selectors = [];
++  const records = new Set(), images = [], timers = new Map(), frames = new Map(), made = [], requests = [], warnings = [], selectors = [], signals = [];
+   class Target {
+     addEventListener(name, fn, options) { records.add({ target: this, name, fn, options }); }
+     removeEventListener(name, fn) { for (const r of records) if (r.target === this && r.name === name && r.fn === fn) records.delete(r); }
+@@ -67,8 +67,9 @@ function environment({ sprites = {}, serveData = true, missing = [], variants =
+     console: { warn: (text) => warnings.push(text) }, getComputedStyle: (node) => node.css || {},
+     setTimeout: (fn) => { timers.set(++next, fn); return next; }, clearTimeout: (id) => timers.delete(id),
+     requestAnimationFrame: (fn) => { frames.set(++next, fn); return next; }, cancelAnimationFrame: (id) => frames.delete(id),
+-    fetch: (url) => {
+-      requests.push(url);
++    AbortController,
++    fetch: (url, options) => {
++      requests.push(url); if (options && options.signal) signals.push(options.signal);
+       if (url === "data/moves.json") return serveData ? respond("", moves) : respond();
+       if (url === "data/pokedex.json") return serveData ? respond("", pokedex) : respond();
+       if (url === "data/variants.json") return serveData && variants ? respond("", variants) : respond();
+@@ -77,6 +78,6 @@ function environment({ sprites = {}, serveData = true, missing = [], variants =
+     } });
+   const tick = (ms = 16) => { time += ms; const pending = [...timers.values(), ...frames.values()]; timers.clear(); frames.clear(); pending.forEach((fn) => fn()); };
+   const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve)); };
+-  return { env, doc, media, images, timers, frames, records, made, requests, warnings, selectors, tick, settle };
++  return { env, doc, media, images, timers, frames, records, made, requests, warnings, selectors, signals, tick, settle };
+ }
+ module.exports = { fs, path, moves, pokedex, data, species, anim, fighterXml, plainXml, sizes, pmd, seeded, duel, texts, environment };
+diff --git a/test/suspend.test.js b/test/suspend.test.js
+new file mode 100644
+index 0000000..6279c61
+--- /dev/null
++++ b/test/suspend.test.js
+@@ -0,0 +1,212 @@
++"use strict";
++/* suspend() must leave nothing running: no timer, no listener, no load in the
++ * browser and no download in the node helper. resume() starts it all again. */
++const test = require("node:test");
++const assert = require("node:assert/strict");
++const os = require("node:os");
++const vm = require("node:vm");
++const Engine = require("../lib/pk-engine.js");
++const Controller = require("../lib/pk-controller.js");
++const { fs, path, fighterXml, sizes, environment } = require("./helpers.js");
++
++const sprites = { "0025": fighterXml, "0007": fighterXml };
++const quiet = { idleMin: 300, idleMax: 300, sleepAfter: 3600, reducedMotion: "never", party: ["pikachu", "squirtle"] };
++const sheets = Object.keys(sizes(fighterXml)).length;
++
++test("suspend stops the clock and removes every listener; resume restores both", async () => {
++  const e = environment({ sprites }), c = new Controller(quiet, e.env);
++  await e.settle(); e.tick(16);
++  const listeners = e.records.size;
++  assert.equal(e.timers.size, 1); assert.ok(listeners >= 8);
++
++  c.suspend();
++  assert.equal(e.timers.size, 0); assert.equal(e.frames.size, 0); assert.equal(e.records.size, 0); assert.equal(c.loads.size, 0);
++  // Nothing can wake it: browser events have no listener, and ticking the clock runs nothing.
++  const before = JSON.stringify(c.pets.map((p) => p.sprite.style)), x = c.cats.map((cat) => cat.x);
++  e.env.innerWidth = 400; e.env.emit("resize"); e.doc.emit("visibilitychange"); e.env.emit("pageshow"); e.media.emit("change");
++  e.doc.emit("pointermove", { pointerType: "mouse", clientX: 5, clientY: 5 });
++  e.tick(1000); await e.settle();
++  assert.equal(e.timers.size, 0); assert.equal(e.frames.size, 0);
++  assert.equal(JSON.stringify(c.pets.map((p) => p.sprite.style)), before); assert.deepEqual(c.cats.map((cat) => cat.x), x);
++  c.suspend(); assert.equal(e.records.size, 0); // Suspending twice is harmless.
++
++  c.resume();
++  assert.equal(e.timers.size, 1); assert.equal(e.records.size, listeners);
++  assert.ok(c.cats.every((cat) => cat.x <= 400)); // Caught up with the resize it did not hear.
++  c.resume(); assert.equal(e.timers.size, 1); assert.equal(e.records.size, listeners); // So is resuming twice.
++  e.tick(16); assert.equal(e.timers.size, 1);
++  c.destroy(); assert.equal(e.records.size, 0);
++});
++
++test("suspending while the game data loads aborts it; resume loads it again", async () => {
++  const e = environment({ sprites }), c = new Controller(quiet, e.env);
++  assert.equal(e.requests.length, 3); assert.ok(e.signals.length === 3 && e.signals.every((s) => !s.aborted));
++  c.suspend();
++  assert.ok(e.signals.every((s) => s.aborted));
++  await e.settle();
++  assert.equal(c.pets.length, 0); assert.equal(c.data, null); assert.equal(e.requests.length, 3); // The late answer was ignored.
++  c.resume(); await e.settle();
++  assert.equal(c.pets.length, 2); assert.deepEqual(c.cats.map((cat) => cat.sprites.format), ["pmd", "pmd"]);
++  assert.equal(e.requests.filter((u) => u === "data/moves.json").length, 2);
++  c.destroy();
++});
++
++test("suspending while artwork loads stops the images; resume loads them again", async () => {
++  const e = environment({ sprites }), Image = e.env.Image, slow = [];
++  // Images that never finish on their own: the downloads are still running when the module is suspended.
++  e.env.Image = class extends Image { set src(url) { this.url = url; if (url) slow.push(this); } get src() { return this.url; } };
++  const c = new Controller(quiet, e.env);
++  await e.settle();
++  assert.equal(slow.length, 2 * sheets); assert.equal(c.loads.size, 2 * sheets);
++  const calls = e.requests.length;
++  c.suspend();
++  assert.equal(c.loads.size, 0); assert.equal(e.records.size, 0);
++  assert.ok(slow.every((image) => image.src === "")); // Each download was told to stop.
++  for (const image of slow) { image.naturalWidth = 256; image.naturalHeight = 256; image.emit("load"); } // A late answer changes nothing.
++  await e.settle();
++  assert.ok(c.cats.every((cat) => cat.sprites.format !== "pmd")); assert.equal(slow.length, 2 * sheets); assert.equal(e.requests.length, calls);
++  e.env.Image = Image;
++  c.resume(); await e.settle();
++  assert.deepEqual(c.cats.map((cat) => cat.sprites.format), ["pmd", "pmd"]); assert.equal(e.requests.filter((u) => u === "data/moves.json").length, 1);
++  assert.equal(c.loads.size, 0); assert.equal(c.pets[0].sprite.style.display, "block");
++  c.destroy();
++});
++
++test("a suspended module asks for no downloads and ignores finished ones until it resumes", async () => {
++  const e = environment({ sprites: {} }), asked = [], fetch = e.env.fetch, held = [];
++  // Hold the answer to the first AnimData.xml request until after the module is suspended.
++  e.env.fetch = (url, options) => (url.endsWith(".xml") && !held.length ? new Promise((resolve) => { held.push(() => resolve(fetch(url, options))); }) : fetch(url, options));
++  const c = new Controller({ ...quiet, party: ["pikachu"] }, e.env, undefined, { requestSprites: (id) => asked.push(id) });
++  await e.settle(); assert.equal(held.length, 1);
++  c.suspend(); held[0](); await e.settle();
++  assert.deepEqual(asked, []); // The missing artwork was never reported, so nothing was requested.
++  const calls = e.requests.length;
++  c.spritesReady("0025", true); await e.settle(); assert.equal(e.requests.length, calls);
++  c.resume(); await e.settle();
++  assert.deepEqual(asked, ["0025"]); assert.equal(e.requests.length, calls + 1);
++  c.destroy();
++});
++
++test("commands received while suspended are remembered without drawing or measuring", async () => {
++  const e = environment({ sprites }), c = new Controller(quiet, e.env);
++  await e.settle();
++  let measured = 0; e.doc.querySelector = () => { measured++; return null; };
++  c.suspend();
++  assert.equal(c.receive("POKEMON_SET_MODE", { mode: "mouse" }), true); assert.equal(c.receive("POKEMON_GO_TO_REGION", { region: "top_left" }), true);
++  assert.equal(c.receive("POKEMON_HIDE"), true);
++  assert.equal(e.timers.size, 0); assert.equal(measured, 0); assert.equal(c.element.style.display, "block"); // Not drawn yet.
++  c.resume();
++  assert.ok(c.cats.every((cat) => cat.region === "top_left")); assert.equal(measured, 2); // Measured once per sprite, on resume.
++  assert.equal(c.element.style.display, "none"); assert.equal(e.timers.size, 0); // Still hidden by POKEMON_HIDE.
++  c.receive("POKEMON_SHOW"); assert.equal(e.timers.size, 1);
++  c.destroy();
++});
++
++test("the module tells the node helper when it is suspended and resumed", () => {
++  const e = environment({ sprites }); let def; const sent = [];
++  const context = { Module: { register: (name, d) => { def = d; } }, PkEngine: Engine, PkController: Controller, window: e.env };
++  vm.runInNewContext(fs.readFileSync(require.resolve("../MMM-Pokemon.js"), "utf8"), context);
++  const m = Object.assign(Object.create(def), { config: { ...def.defaults }, file: (p) => p, sendSocketNotification: (name) => sent.push(name) });
++  m.start(); m.suspend(); assert.equal(m.pk.suspended, true); m.resume(); assert.equal(m.pk.suspended, false);
++  assert.deepEqual(sent, ["POKEMON_SUSPENDED", "POKEMON_RESUMED"]);
++  m.stop();
++});
++
++/* node_helper.js with MagicMirror's `node_helper` and the downloader replaced. */
++function helper(fetchSprite) {
++  const source = fs.readFileSync(require.resolve("../node_helper.js"), "utf8"), mod = { exports: {} }, sent = [];
++  const fake = (name) => (name === "node_helper" ? { create: (def) => def } : name === "./lib/collab.js" ? { ...require("../lib/collab.js"), fetchSprite } : require(name));
++  new Function("require", "module", "__dirname", source)(fake, mod, "/mm");
++  const h = Object.assign(mod.exports, { sendSocketNotification: (name, payload) => sent.push([name, payload]) });
++  h.start();
++  return { h, sent };
++}
++const turn = async () => { for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve)); };
++
++test("the node helper aborts the download in progress on suspend, waits, and starts again on resume", async () => {
++  const calls = [];
++  // A download that only ends when the test finishes it, or when it is aborted.
++  const { h, sent } = helper((id, root, log, signal) => new Promise((resolve, reject) => {
++    const call = { id, signal, finish: () => resolve({ folder: id, saved: 1, cached: false }) };
++    calls.push(call);
++    signal.addEventListener("abort", () => reject(signal.reason));
++  }));
++  const log = console.log, error = console.error, errors = []; console.log = () => {}; console.error = (text) => errors.push(text);
++  try {
++    h.socketNotificationReceived("POKEMON_FETCH_SPRITES", { id: "0025" }); h.socketNotificationReceived("POKEMON_FETCH_SPRITES", { id: "0007" });
++    await turn(); assert.deepEqual(calls.map((c) => c.id), ["0025"]);
++
++    h.socketNotificationReceived("POKEMON_SUSPENDED"); await turn();
++    assert.equal(calls[0].signal.aborted, true);
++    assert.equal(calls.length, 1); assert.deepEqual(sent, []); assert.deepEqual(errors, []); // Waiting: no retry, no report, no failure.
++
++    h.socketNotificationReceived("POKEMON_RESUMED"); await turn();
++    assert.deepEqual(calls.map((c) => c.id), ["0025", "0025"]); assert.equal(calls[1].signal.aborted, false); // The interrupted sprite starts again.
++    calls[1].finish(); await turn();
++    assert.deepEqual(calls.map((c) => c.id), ["0025", "0025", "0007"]);
++    calls[2].finish(); await turn();
++    assert.deepEqual(sent, [["POKEMON_SPRITES", { folder: "0025", ok: true }], ["POKEMON_SPRITES", { folder: "0007", ok: true }]]);
++
++    // Suspended while idle: a later request is from a module that is showing, so the queue runs.
++    h.socketNotificationReceived("POKEMON_SUSPENDED"); h.socketNotificationReceived("POKEMON_FETCH_SPRITES", { id: "0001" });
++    await turn(); assert.equal(calls.length, 4); calls[3].finish(); await turn(); assert.equal(sent.length, 3);
++  } finally { console.log = log; console.error = error; }
++});
++
++test("an aborted sprite download rejects and leaves the folder to be fetched again", async () => {
++  const { fetchSprite } = require("../lib/collab.js");
++  const root = fs.mkdtempSync(path.join(os.tmpdir(), "pk-")), original = globalThis.fetch, aborter = new AbortController();
++  let pngs = 0;
++  globalThis.fetch = async (url, options) => {
++    assert.equal(options.signal, aborter.signal);
++    if (options.signal.aborted) throw options.signal.reason;
++    if (url.endsWith("AnimData.xml")) return { ok: true, arrayBuffer: async () => Buffer.from(fighterXml) };
++    if (++pngs === 3) { aborter.abort(); throw aborter.signal.reason; } // Suspended during the third sheet.
++    return { ok: true, arrayBuffer: async () => Buffer.from("png") };
++  };
++  try {
++    await assert.rejects(fetchSprite("0025", root, undefined, aborter.signal), { name: "AbortError" });
++    assert.equal(pngs, 3); // It did not carry on to the remaining sheets.
++    assert.equal(fs.existsSync(path.join(root, "0025", "AnimData.xml")), false); // So the next attempt is not treated as cached.
++    globalThis.fetch = async (url) => ({ ok: true, arrayBuffer: async () => Buffer.from(url.endsWith(".xml") ? fighterXml : "x") });
++    assert.deepEqual(await fetchSprite("0025", root), { folder: "0025", saved: sheets, cached: false });
++  } finally { globalThis.fetch = original; fs.rmSync(root, { recursive: true, force: true }); }
++});
++
++test("unloadOnSuspend releases the elements, artwork, party and data; resume loads everything afresh", async () => {
++  const e = environment({ sprites }), asked = [];
++  const c = new Controller({ ...quiet, unloadOnSuspend: true }, e.env, undefined, { requestSprites: (id) => asked.push(id) });
++  await e.settle(); e.tick(16);
++  const root = c.element, old = c.pets, oldCats = c.cats, arena = c.arena;
++  assert.equal(old.length, 2); assert.ok(old.every((pet) => pet.sprite.style.backgroundImage.startsWith("url(")));
++  c.receive("POKEMON_PAUSE");
++
++  c.suspend();
++  assert.equal(e.timers.size, 0); assert.equal(e.records.size, 0);
++  assert.ok(old.every((pet) => pet.sprite.removed && pet.shield.removed && pet.hud.removed && pet.sprite.style.backgroundImage === "none"));
++  assert.equal(c.pets.length, 0); assert.equal(c.cats.length, 0); assert.equal(c.labels.length, 0); assert.equal(c.dots.length, 0);
++  assert.equal(c.data, null); assert.equal(c.species, null); assert.equal(c.variants, null);
++  assert.notEqual(c.arena, arena); assert.notEqual(c.cats, oldCats); assert.equal(c.arena.cats, c.cats); assert.equal(c.arena.battles.length, 0);
++  assert.equal(c.element, root); assert.notEqual(root.removed, true); // The module's own wrapper stays for MagicMirror.
++  const calls = e.requests.length; e.tick(1000); await e.settle(); assert.equal(e.requests.length, calls);
++
++  c.resume(); await e.settle();
++  assert.equal(e.requests.filter((u) => u === "data/moves.json").length, 2); assert.equal(e.requests.filter((u) => u === "sprites/0025/AnimData.xml").length, 2);
++  assert.equal(c.pets.length, 2); assert.ok(c.pets.every((pet) => !old.includes(pet) && !pet.sprite.removed));
++  assert.deepEqual(c.cats.map((cat) => cat.sprites.format), ["pmd", "pmd"]); assert.equal(c.arena.data, c.data);
++  assert.equal(c.paused, true); assert.equal(e.timers.size, 0); // The pause command survived the unload.
++  c.receive("POKEMON_RESUME"); assert.equal(e.timers.size, 1); e.tick(16); assert.equal(c.pets[0].sprite.style.display, "block");
++  c.suspend(); c.resume(); await e.settle(); assert.equal(c.pets.length, 2); // And again.
++  c.destroy();
++});
++
++test("without unloadOnSuspend the party and its artwork are kept across a suspend", async () => {
++  const e = environment({ sprites }), c = new Controller(quiet, e.env);
++  await e.settle();
++  const pets = [...c.pets], data = c.data, calls = e.requests.length;
++  c.suspend(); c.resume(); await e.settle();
++  assert.deepEqual(c.pets, pets); assert.equal(c.data, data); assert.equal(e.requests.length, calls);
++  assert.ok(pets.every((pet) => !pet.sprite.removed));
++  assert.equal(Engine.validateConfig({ unloadOnSuspend: "yes" }).config.unloadOnSuspend, false); assert.equal(Engine.validateConfig({ unloadOnSuspend: true }).config.unloadOnSuspend, true);
++  c.destroy();
++});

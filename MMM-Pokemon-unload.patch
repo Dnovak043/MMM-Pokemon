@@ -1,0 +1,157 @@
+diff --git a/MMM-Pokemon.js b/MMM-Pokemon.js
+index d8436c5..b281542 100644
+--- a/MMM-Pokemon.js
++++ b/MMM-Pokemon.js
+@@ -6,7 +6,7 @@ Module.register("MMM-Pokemon", {
+     party: ["pikachu", "charmander", "squirtle", "bulbasaur"], randomParty: 0, randomVariants: false, level: 50,
+     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
+     startPosition: { x: 0.5, y: 0.7 }, inset: 16, reducedMotion: "auto", avoid: [], avoidMargin: 4, skipActions: [],
+-    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,
++    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true, unloadOnSuspend: false,
+     nameSize: 0, hpBarWidth: 0, hpBarHeight: 0, textSize: 0, textBoxWidth: 0
+   },
+   getScripts() { return ["pk-sprites", "pk-engine", "pk-mechanics", "pk-battle", "pk-controller"].map((name) => this.file(`lib/${name}.js`)); },
+diff --git a/README.md b/README.md
+index e387219..7310b54 100644
+--- a/README.md
++++ b/README.md
+@@ -194,6 +194,7 @@ Pokémon learns them, so they only appear if you list them under `moves`.
+ | `textSize` | `0` | Battle text size in pixels (6–96); `0` = automatic |
+ | `textBoxWidth` | `0` | Battle text box width in pixels (80–2000); `0` = automatic. The box grows taller to fit its text |
+ | `autoDownload` | `true` | Fetch missing artwork from Sprite Collab |
++| `unloadOnSuspend` | `false` | When MagicMirror hides the module, also release the artwork, the party and the game data from memory. The module starts afresh when shown again |
+ | `skipActions` | `[]` | Action names (e.g. `["Hop"]`) never to play as a fidget between walks |
+ | `mode` | `"wander"` | `"wander"`, `"mouse"` or `"touch"` (follow the pointer) |
+ | `scale` | `2` | Integer 1–4 enlargement of the artwork |
+@@ -222,6 +223,14 @@ in the browser, and the sprite download in the node helper. Nothing runs until
+ `module.show()` calls `resume()`, which picks everything up where it stopped.
+ Commands received while suspended are remembered and applied on resume.
+ 
++With `unloadOnSuspend: true` the module also lets go of everything it holds:
++its elements are removed from the page and the sprite sheets, the party and the
++game data are dropped, so the browser can free that memory (including the
++sprite textures on the GPU). When the module is shown again it loads everything
++afresh: battles, positions and HP start over, a random party is drawn again,
++and a mode or region set by notification is forgotten. Show/hide and
++pause/resume commands are still remembered.
++
+ ## Development
+ 
+ ```sh
+diff --git a/lib/pk-controller.js b/lib/pk-controller.js
+index 52d299a..df431c8 100644
+--- a/lib/pk-controller.js
++++ b/lib/pk-controller.js
+@@ -378,8 +378,21 @@
+       if (this.destroyed || this.suspended) return;
+       this.suspended = true;
+       this.stop(); this.detach(); this.cancel();
++      if (this.config.unloadOnSuspend) this.unload();
++    }
++    /* Forget everything that was loaded or drawn: the elements, the artwork they show, the
++     * party and the game data. Nothing refers to a sprite sheet afterwards, so the browser can
++     * free the decoded images and their textures. resume() then starts from nothing. */
++    unload() {
++      for (const pet of this.pets) for (const element of [pet.sprite, pet.shield, pet.hud]) { element.style.backgroundImage = "none"; element.remove(); }
++      for (const item of [...this.labels, ...this.dots]) item.element.remove();
++      this.pets = []; this.cats = []; this.dots = []; this.labels = [];
++      this.data = null; this.species = null; this.variants = null;
++      this.arena = new Battle.Arena(this.cats, this.config);
++      this.keys = new WeakMap(); this.nextKey = 0; this.measured = -Infinity; this.sliding = false;
+     }
+-    /* Shown again: listen again, restart whatever suspend() interrupted, and catch up with the window. */
++    /* Shown again: listen again, restart whatever suspend() interrupted (or, after an unload,
++     * load everything afresh), and catch up with the window. */
+     resume() {
+       if (this.destroyed || !this.suspended) return;
+       this.suspended = false;
+diff --git a/lib/pk-engine.js b/lib/pk-engine.js
+index 868886d..64abfb6 100644
+--- a/lib/pk-engine.js
++++ b/lib/pk-engine.js
+@@ -10,7 +10,7 @@
+     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
+     startPosition: Object.freeze({ x: 0.5, y: 0.7 }), inset: 16, reducedMotion: "auto", avoid: Object.freeze([]), avoidMargin: 4,
+     skipActions: Object.freeze([]), battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1,
+-    moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,
++    moveDelay: 0.5, showText: true, showHp: true, autoDownload: true, unloadOnSuspend: false,
+     // Sizes in pixels; 0 means "work it out from `scale`".
+     nameSize: 0, hpBarWidth: 0, hpBarHeight: 0, textSize: 0, textBoxWidth: 0
+   });
+@@ -82,7 +82,7 @@
+       hpBarHeight: (v) => v === 0 || (finite(v) && v >= 2 && v <= 60),
+       textSize: (v) => v === 0 || (finite(v) && v >= 6 && v <= 96),
+       textBoxWidth: (v) => v === 0 || (finite(v) && v >= 80 && v <= 2000),
+-      showText: (v) => typeof v === "boolean", showHp: (v) => typeof v === "boolean", autoDownload: (v) => typeof v === "boolean",
++      showText: (v) => typeof v === "boolean", showHp: (v) => typeof v === "boolean", autoDownload: (v) => typeof v === "boolean", unloadOnSuspend: (v) => typeof v === "boolean",
+       battles: (v) => typeof v === "boolean",
+       battleRange: (v) => finite(v) && v >= 0 && v <= 300,
+       battleCooldown: (v) => finite(v) && v >= 0 && v <= 3600,
+diff --git a/test/engine.test.js b/test/engine.test.js
+index 0b3ae3a..6fc82fa 100644
+--- a/test/engine.test.js
++++ b/test/engine.test.js
+@@ -16,7 +16,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
+     randomParty: 500, randomVariants: true, level: 100, mode: "touch", scale: 4, speed: 200, idleMin: 1, idleMax: 300,
+     sleepAfter: 5, sleepDuration: 3600, startPosition: { x: 0, y: 1 }, inset: 500, reducedMotion: "never",
+     avoid: ["MMM-Drawer", "#panel .sheet"], avoidMargin: 100, skipActions: ["Faint", "Special_1"],
+-    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false,
++    battles: false, battleRange: 300, battleCooldown: 0, faintTime: 600, battleSpeed: 4, moveDelay: 10, showText: false, showHp: false, autoDownload: false, unloadOnSuspend: true,
+     nameSize: 14, hpBarWidth: 120, hpBarHeight: 8, textSize: 20, textBoxWidth: 500 };
+   assert.deepEqual(validateConfig(valid).config, valid);
+   assert.deepEqual(validateConfig(valid).invalid, []);
+@@ -29,7 +29,7 @@ test("configuration defaults, ranges, enums, unknown keys and invalid pairs", ()
+   }
+   assert.equal(validateConfig({ party: new Array(200).fill("pikachu") }).config.party.length, 200); // No upper limit.
+   for (const [key, value] of [["randomParty", -1], ["randomParty", 2.5], ["randomParty", "6"], ["randomVariants", 1], ["level", 0], ["level", 101], ["level", 5.5], ["battles", 1], ["battleRange", -1], ["battleRange", 301], ["battleCooldown", -1],
+-    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
++    ["faintTime", 0], ["battleSpeed", 0], ["battleSpeed", 5], ["showText", "yes"], ["showHp", 0], ["autoDownload", null], ["unloadOnSuspend", 1], ["moveDelay", -1], ["moveDelay", 11], ["nameSize", 3], ["hpBarWidth", 5], ["hpBarHeight", 1], ["textSize", 200], ["textBoxWidth", 10]]) {
+     assert.deepEqual(validateConfig({ [key]: value }).invalid, [key]);
+   }
+ });
+diff --git a/test/suspend.test.js b/test/suspend.test.js
+index ed95f2c..6279c61 100644
+--- a/test/suspend.test.js
++++ b/test/suspend.test.js
+@@ -172,3 +172,41 @@ test("an aborted sprite download rejects and leaves the folder to be fetched aga
+     assert.deepEqual(await fetchSprite("0025", root), { folder: "0025", saved: sheets, cached: false });
+   } finally { globalThis.fetch = original; fs.rmSync(root, { recursive: true, force: true }); }
+ });
++
++test("unloadOnSuspend releases the elements, artwork, party and data; resume loads everything afresh", async () => {
++  const e = environment({ sprites }), asked = [];
++  const c = new Controller({ ...quiet, unloadOnSuspend: true }, e.env, undefined, { requestSprites: (id) => asked.push(id) });
++  await e.settle(); e.tick(16);
++  const root = c.element, old = c.pets, oldCats = c.cats, arena = c.arena;
++  assert.equal(old.length, 2); assert.ok(old.every((pet) => pet.sprite.style.backgroundImage.startsWith("url(")));
++  c.receive("POKEMON_PAUSE");
++
++  c.suspend();
++  assert.equal(e.timers.size, 0); assert.equal(e.records.size, 0);
++  assert.ok(old.every((pet) => pet.sprite.removed && pet.shield.removed && pet.hud.removed && pet.sprite.style.backgroundImage === "none"));
++  assert.equal(c.pets.length, 0); assert.equal(c.cats.length, 0); assert.equal(c.labels.length, 0); assert.equal(c.dots.length, 0);
++  assert.equal(c.data, null); assert.equal(c.species, null); assert.equal(c.variants, null);
++  assert.notEqual(c.arena, arena); assert.notEqual(c.cats, oldCats); assert.equal(c.arena.cats, c.cats); assert.equal(c.arena.battles.length, 0);
++  assert.equal(c.element, root); assert.notEqual(root.removed, true); // The module's own wrapper stays for MagicMirror.
++  const calls = e.requests.length; e.tick(1000); await e.settle(); assert.equal(e.requests.length, calls);
++
++  c.resume(); await e.settle();
++  assert.equal(e.requests.filter((u) => u === "data/moves.json").length, 2); assert.equal(e.requests.filter((u) => u === "sprites/0025/AnimData.xml").length, 2);
++  assert.equal(c.pets.length, 2); assert.ok(c.pets.every((pet) => !old.includes(pet) && !pet.sprite.removed));
++  assert.deepEqual(c.cats.map((cat) => cat.sprites.format), ["pmd", "pmd"]); assert.equal(c.arena.data, c.data);
++  assert.equal(c.paused, true); assert.equal(e.timers.size, 0); // The pause command survived the unload.
++  c.receive("POKEMON_RESUME"); assert.equal(e.timers.size, 1); e.tick(16); assert.equal(c.pets[0].sprite.style.display, "block");
++  c.suspend(); c.resume(); await e.settle(); assert.equal(c.pets.length, 2); // And again.
++  c.destroy();
++});
++
++test("without unloadOnSuspend the party and its artwork are kept across a suspend", async () => {
++  const e = environment({ sprites }), c = new Controller(quiet, e.env);
++  await e.settle();
++  const pets = [...c.pets], data = c.data, calls = e.requests.length;
++  c.suspend(); c.resume(); await e.settle();
++  assert.deepEqual(c.pets, pets); assert.equal(c.data, data); assert.equal(e.requests.length, calls);
++  assert.ok(pets.every((pet) => !pet.sprite.removed));
++  assert.equal(Engine.validateConfig({ unloadOnSuspend: "yes" }).config.unloadOnSuspend, false); assert.equal(Engine.validateConfig({ unloadOnSuspend: true }).config.unloadOnSuspend, true);
++  c.destroy();
++});

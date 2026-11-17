@@ -194,6 +194,7 @@ Pokémon learns them, so they only appear if you list them under `moves`.
 | `textSize` | `0` | Battle text size in pixels (6–96); `0` = automatic |
 | `textBoxWidth` | `0` | Battle text box width in pixels (80–2000); `0` = automatic. The box grows taller to fit its text |
 | `autoDownload` | `true` | Fetch missing artwork from Sprite Collab |
+| `unloadOnSuspend` | `false` | When MagicMirror hides the module, also release the artwork, the party and the game data from memory. The module starts afresh when shown again |
 | `skipActions` | `[]` | Action names (e.g. `["Hop"]`) never to play as a fidget between walks |
 | `mode` | `"wander"` | `"wander"`, `"mouse"` or `"touch"` (follow the pointer) |
 | `scale` | `2` | Integer 1–4 enlargement of the artwork |
@@ -221,6 +222,14 @@ animation timer, every window and document listener, any artwork still loading
 in the browser, and the sprite download in the node helper. Nothing runs until
 `module.show()` calls `resume()`, which picks everything up where it stopped.
 Commands received while suspended are remembered and applied on resume.
+
+With `unloadOnSuspend: true` the module also lets go of everything it holds:
+its elements are removed from the page and the sprite sheets, the party and the
+game data are dropped, so the browser can free that memory (including the
+sprite textures on the GPU). When the module is shown again it loads everything
+afresh: battles, positions and HP start over, a random party is drawn again,
+and a mode or region set by notification is forgotten. Show/hide and
+pause/resume commands are still remembered.
 
 ## Development
 

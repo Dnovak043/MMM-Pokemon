@@ -6,7 +6,7 @@ Module.register("MMM-Pokemon", {
     party: ["pikachu", "charmander", "squirtle", "bulbasaur"], randomParty: 0, randomVariants: false, level: 50,
     mode: "wander", scale: 2, speed: 32, idleMin: 4, idleMax: 10, sleepAfter: 120, sleepDuration: 30,
     startPosition: { x: 0.5, y: 0.7 }, inset: 16, reducedMotion: "auto", avoid: [], avoidMargin: 4, skipActions: [],
-    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true,
+    battles: true, battleRange: 24, battleCooldown: 30, faintTime: 8, battleSpeed: 1, moveDelay: 0.5, showText: true, showHp: true, autoDownload: true, unloadOnSuspend: false,
     nameSize: 0, hpBarWidth: 0, hpBarHeight: 0, textSize: 0, textBoxWidth: 0
   },
   getScripts() { return ["pk-sprites", "pk-engine", "pk-mechanics", "pk-battle", "pk-controller"].map((name) => this.file(`lib/${name}.js`)); },

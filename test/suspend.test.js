@@ -172,3 +172,41 @@ test("an aborted sprite download rejects and leaves the folder to be fetched aga
     assert.deepEqual(await fetchSprite("0025", root), { folder: "0025", saved: sheets, cached: false });
   } finally { globalThis.fetch = original; fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("unloadOnSuspend releases the elements, artwork, party and data; resume loads everything afresh", async () => {
+  const e = environment({ sprites }), asked = [];
+  const c = new Controller({ ...quiet, unloadOnSuspend: true }, e.env, undefined, { requestSprites: (id) => asked.push(id) });
+  await e.settle(); e.tick(16);
+  const root = c.element, old = c.pets, oldCats = c.cats, arena = c.arena;
+  assert.equal(old.length, 2); assert.ok(old.every((pet) => pet.sprite.style.backgroundImage.startsWith("url(")));
+  c.receive("POKEMON_PAUSE");
+
+  c.suspend();
+  assert.equal(e.timers.size, 0); assert.equal(e.records.size, 0);
+  assert.ok(old.every((pet) => pet.sprite.removed && pet.shield.removed && pet.hud.removed && pet.sprite.style.backgroundImage === "none"));
+  assert.equal(c.pets.length, 0); assert.equal(c.cats.length, 0); assert.equal(c.labels.length, 0); assert.equal(c.dots.length, 0);
+  assert.equal(c.data, null); assert.equal(c.species, null); assert.equal(c.variants, null);
+  assert.notEqual(c.arena, arena); assert.notEqual(c.cats, oldCats); assert.equal(c.arena.cats, c.cats); assert.equal(c.arena.battles.length, 0);
+  assert.equal(c.element, root); assert.notEqual(root.removed, true); // The module's own wrapper stays for MagicMirror.
+  const calls = e.requests.length; e.tick(1000); await e.settle(); assert.equal(e.requests.length, calls);
+
+  c.resume(); await e.settle();
+  assert.equal(e.requests.filter((u) => u === "data/moves.json").length, 2); assert.equal(e.requests.filter((u) => u === "sprites/0025/AnimData.xml").length, 2);
+  assert.equal(c.pets.length, 2); assert.ok(c.pets.every((pet) => !old.includes(pet) && !pet.sprite.removed));
+  assert.deepEqual(c.cats.map((cat) => cat.sprites.format), ["pmd", "pmd"]); assert.equal(c.arena.data, c.data);
+  assert.equal(c.paused, true); assert.equal(e.timers.size, 0); // The pause command survived the unload.
+  c.receive("POKEMON_RESUME"); assert.equal(e.timers.size, 1); e.tick(16); assert.equal(c.pets[0].sprite.style.display, "block");
+  c.suspend(); c.resume(); await e.settle(); assert.equal(c.pets.length, 2); // And again.
+  c.destroy();
+});
+
+test("without unloadOnSuspend the party and its artwork are kept across a suspend", async () => {
+  const e = environment({ sprites }), c = new Controller(quiet, e.env);
+  await e.settle();
+  const pets = [...c.pets], data = c.data, calls = e.requests.length;
+  c.suspend(); c.resume(); await e.settle();
+  assert.deepEqual(c.pets, pets); assert.equal(c.data, data); assert.equal(e.requests.length, calls);
+  assert.ok(pets.every((pet) => !pet.sprite.removed));
+  assert.equal(Engine.validateConfig({ unloadOnSuspend: "yes" }).config.unloadOnSuspend, false); assert.equal(Engine.validateConfig({ unloadOnSuspend: true }).config.unloadOnSuspend, true);
+  c.destroy();
+});
